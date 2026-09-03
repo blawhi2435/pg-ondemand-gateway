@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>跨叢集邊界方案選型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --paper:#eef2f4;
+  --surface:#fbfcfc;
+  --surface-2:#e2e9ec;
+  --line:#c3d0d5;
+  --line-soft:#d8e1e4;
+  --ink:#0e1a20;
+  --ink-2:#4b626c;
+  --ink-3:#758b94;
+  /* 方案 B = 建議案，走主色 */
+  --b:#0a6a84;
+  --b-soft:#dcedf2;
+  /* 方案 A = 對照案，走赭色 */
+  --a:#8a5510;
+  --a-soft:#f5ead8;
+  --danger:#9d2f27;
+  --danger-soft:#f7e3e1;
+  --ok:#256a4d;
+  --shadow:0 1px 2px rgba(14,26,32,.06), 0 8px 24px -16px rgba(14,26,32,.35);
+  --col:660px;
+  --wide:1000px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0b1418; --surface:#121e24; --surface-2:#1a2930;
+    --line:#2a3f48; --line-soft:#213038;
+    --ink:#e4edf0; --ink-2:#9ab0b8; --ink-3:#6f8790;
+    --b:#54c3e0; --b-soft:#0d2b35;
+    --a:#d9a55c; --a-soft:#2e2412;
+    --danger:#ef8b7f; --danger-soft:#371b18; --ok:#6ec79a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0b1418; --surface:#121e24; --surface-2:#1a2930;
+  --line:#2a3f48; --line-soft:#213038;
+  --ink:#e4edf0; --ink-2:#9ab0b8; --ink-3:#6f8790;
+  --b:#54c3e0; --b-soft:#0d2b35;
+  --a:#d9a55c; --a-soft:#2e2412;
+  --danger:#ef8b7f; --danger-soft:#371b18; --ok:#6ec79a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Serif","Noto Serif TC",Georgia,serif;
+  font-size:16px;line-height:1.72;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 24px 96px}
+p{margin:0 0 16px}
+a{color:var(--b)}
+strong{font-weight:600;color:var(--ink)}
+em.t{font-style:normal;font-family:"IBM Plex Mono",monospace;font-size:.88em;
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;color:var(--ink)}
+
+/* ---------- masthead ---------- */
+.mast{border-bottom:2px solid var(--ink);padding:56px 0 22px;margin-bottom:36px}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--b);margin:0 0 14px}
+h1{font-family:"IBM Plex Sans Condensed","Noto Sans TC",system-ui,sans-serif;
+  font-weight:700;font-size:clamp(32px,5vw,50px);line-height:1.06;letter-spacing:-.015em;
+  margin:0 0 16px;text-wrap:balance;max-width:14em}
+.dek{font-size:18px;color:var(--ink-2);max-width:620px;margin:0}
+
+/* ---------- verdict banner ---------- */
+.verdict{
+  border:1px solid var(--b);background:var(--b-soft);
+  padding:26px 28px;margin:0 0 14px;
+  display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:center;
+}
+.verdict .pickmark{
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:56px;font-weight:700;line-height:.9;color:var(--b);
+  border-right:1px solid var(--b);padding-right:26px;
+}
+.verdict .pickmark small{display:block;font-family:"IBM Plex Mono",monospace;
+  font-size:10px;letter-spacing:.14em;font-weight:600;margin-top:8px}
+.verdict h2{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:21px;font-weight:600;margin:0 0 8px;line-height:1.3;color:var(--ink)}
+.verdict p{margin:0;font-size:14.5px;line-height:1.65;color:var(--ink-2)}
+.tally{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);
+  margin:0 0 46px;letter-spacing:.02em;
+}
+.tally b{color:var(--ink-2);font-weight:600}
+
+/* ---------- sections ---------- */
+section{margin:0 0 58px}
+h2.sec{font-family:"IBM Plex Sans Condensed","Noto Sans TC",system-ui,sans-serif;
+  font-weight:600;font-size:26px;line-height:1.2;letter-spacing:-.01em;margin:0 0 6px;
+  display:flex;align-items:baseline;gap:12px}
+h2.sec .num{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:500;
+  color:var(--b);flex:none}
+h2.sec + .sub{margin:0 0 26px;padding-left:40px;color:var(--ink-3);
+  font-size:14.5px;font-style:italic;max-width:var(--col)}
+section > p,section > ul{max-width:var(--col)}
+ul{margin:0 0 16px;padding-left:1.35em}
+li{margin:0 0 9px}
+li::marker{color:var(--ink-3)}
+
+/* ---------- head to head grid ---------- */
+.vs{
+  display:grid;grid-template-columns:172px 1fr 1fr;gap:1px;
+  background:var(--line);border:1px solid var(--line);
+  box-shadow:var(--shadow);margin:0 0 8px;
+}
+.vs > div{background:var(--surface);padding:14px 16px;font-size:13.5px;line-height:1.6}
+.vs .hd{
+  position:sticky;top:0;z-index:2;background:var(--surface-2);
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:16px;font-weight:600;padding:13px 16px;
+}
+.vs .hd small{display:block;font-family:"IBM Plex Mono",monospace;font-weight:400;
+  font-size:10.5px;letter-spacing:.06em;color:var(--ink-3);margin-top:2px;text-transform:uppercase}
+.vs .hd.a{color:var(--a)} .vs .hd.b{color:var(--b)}
+.vs .dim{
+  background:var(--surface-2);
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:14.5px;font-weight:600;line-height:1.35;
+}
+.vs .dim small{display:block;font-family:"IBM Plex Mono",monospace;font-weight:400;
+  font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-top:4px}
+.vs .win{position:relative}
+.vs .a.win{background:var(--a-soft);box-shadow:inset 3px 0 0 var(--a)}
+.vs .b.win{background:var(--b-soft);box-shadow:inset 3px 0 0 var(--b)}
+.edge{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  letter-spacing:.12em;font-weight:600;text-transform:uppercase;
+  padding:1px 6px;border-radius:2px;margin-bottom:7px;
+}
+.a .edge{background:var(--a);color:var(--paper)}
+.b .edge{background:var(--b);color:var(--paper)}
+.vs em.t{font-size:.85em}
+.vs-note{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);
+  margin:0 0 34px;letter-spacing:.02em}
+
+/* ---------- figure ---------- */
+figure{margin:28px 0;background:var(--surface);border:1px solid var(--line);
+  padding:24px 22px 16px;box-shadow:var(--shadow);max-width:100%}
+figure svg{display:block;width:100%;height:auto;color:var(--ink-2)}
+figcaption{margin-top:16px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-size:13px;line-height:1.6;color:var(--ink-3)}
+figcaption b{color:var(--ink-2);font-weight:600}
+
+/* ---------- trigger cards ---------- */
+.triggers{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);margin:22px 0 0;
+  box-shadow:var(--shadow);
+}
+.triggers > div{background:var(--surface);padding:20px 22px 22px}
+.triggers h3{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:16px;font-weight:600;margin:0 0 8px;line-height:1.35;color:var(--a)}
+.triggers p{margin:0;font-size:13.5px;line-height:1.62;color:var(--ink-2)}
+.triggers .n{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.13em;
+  color:var(--ink-3);display:block;margin-bottom:9px;font-weight:600}
+
+/* ---------- callouts ---------- */
+.call{border-left:3px solid var(--b);background:var(--b-soft);padding:15px 18px;
+  margin:22px 0;font-size:14.5px;line-height:1.65;max-width:var(--col)}
+.call.warn{border-left-color:var(--a);background:var(--a-soft)}
+.call .lbl{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:5px;color:var(--b)}
+.call.warn .lbl{color:var(--a)}
+.call p:last-child{margin-bottom:0}
+
+/* ---------- code ---------- */
+.code{background:var(--surface);border:1px solid var(--line);margin:20px 0;
+  box-shadow:var(--shadow);max-width:var(--col)}
+.code .hdr{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);padding:9px 16px;
+  border-bottom:1px solid var(--line-soft);background:var(--surface-2);
+  display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.code .hdr b{color:var(--b);font-weight:600}
+.code pre{margin:0;padding:16px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;
+  font-size:12.6px;line-height:1.68;color:var(--ink)}
+.code pre .c{color:var(--ink-3);font-style:italic}
+.code pre .k{color:var(--b);font-weight:500}
+
+footer{margin-top:64px;padding-top:20px;border-top:2px solid var(--ink);
+  font-size:12.5px;color:var(--ink-3);line-height:1.75;max-width:var(--col)}
+footer a{color:var(--ink-2)}
+:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+td,th,p,li{overflow-wrap:anywhere}
+
+@media (max-width:760px){
+  .vs{grid-template-columns:1fr}
+  .vs .hd{display:none}
+  .vs .a::before,.vs .b::before{
+    font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;
+    font-weight:600;display:block;margin-bottom:6px;text-transform:uppercase;
+  }
+  .vs .a::before{content:"方案 A · 直通";color:var(--a)}
+  .vs .b::before{content:"方案 B · 代理";color:var(--b)}
+  .verdict{grid-template-columns:1fr;gap:18px}
+  .verdict .pickmark{border-right:0;border-bottom:1px solid var(--b);
+    padding:0 0 14px;font-size:44px}
+  .wrap{padding:0 16px 70px}
+  h2.sec + .sub{padding-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">決策文件 · 跨叢集 CNPG Pooler 入口</p>
+  <h1>方案 A 或方案 B</h1>
+  <p class="dek">公司內部跨叢集：Cluster A 的應用服務要連到 Cluster B 的 CNPG Pooler，
+  用 wildcard 網域取代 <em class="t">ip:nodePort</em>。差別只在 Cluster B 邊界怎麼處理那一次 TLS 開場，
+  而這個選擇會決定往後每新增一個 pooler 要付多少維運成本。</p>
+</header>
+
+<div class="verdict">
+  <div class="pickmark">B<small>建議</small></div>
+  <div>
+    <h2>選 B：在邊界放一個懂 PostgreSQL 協定的代理</h2>
+    <p>兩個前提讓 A 比一開始看起來更有競爭力：client 幾乎都是自家服務（相容性風險低），
+    而且所有 CNPG Cluster 在同一個 namespace（憑證只有一份，沒有跨 namespace 同步的問題）。
+    <strong>A 是站得住腳的選項。</strong></p>
+    <p>建議仍是 B，但只剩一個決定性理由：<strong>nginx 每套用一份 CR 就 reload，會打斷其他租戶正在跑的交易</strong>，
+    而這個代價隨 pooler 的建立頻率累積。如果你們是自動化按需開通 pooler，B 值得那一個元件的成本；
+    <strong>如果建立頻率其實不高（一週幾個、人工觸發），把 <em class="t">worker-shutdown-timeout</em> 調大就壓得住，那該選 A。</strong></p>
+  </div>
+</div>
+<p class="tally">八個面向中 <b>B 佔六項</b>、<b>A 佔兩項</b>，但權重極不平均：
+內部場景讓「Client 相容性」降權，單一 namespace 讓「憑證管理」降權，
+只剩 <b>「新增 pooler 的影響範圍」</b> 是決定性的。完整對照見 §6。</p>
+
+<section>
+  <h2 class="sec"><span class="num">§1</span> 兩個方案長什麼樣</h2>
+  <p class="sub">左半段完全相同，差別只有邊界那一跳——以及 TLS 從哪裡開始、到哪裡結束。</p>
+
+  <figure>
+    <svg viewBox="0 0 960 462" role="img" aria-label="方案 A 與方案 B 的架構對照。兩者的 Cluster A 內容相同：client 與一台純 L4 轉送的 nginx。差別在 Cluster B：方案 A 用 NGINX Ingress Controller 做 TLS passthrough，TLS 一路加密到 PgBouncer；方案 B 用 Traefik 代答 SSLRequest 後在邊界終止 TLS，邊界到 PgBouncer 為明文">
+      <defs>
+        <marker id="d-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <!-- ══════════ LANE A ══════════ -->
+        <text x="10" y="22" font-size="12.5" font-weight="600" style="fill:var(--a)">方案 A · TLS 直通</text>
+
+        <path d="M87 74 L87 64 L801 64 L801 74" fill="none" style="stroke:var(--a)" stroke-width="1.3"/>
+        <rect x="326" y="55" width="236" height="18" style="fill:var(--surface)"/>
+        <text x="444" y="68" text-anchor="middle" font-size="10.5" style="fill:var(--a)">TLS — client 到 pgbouncer 端到端</text>
+
+        <rect x="10" y="86" width="352" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="24" y="104" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER A — 應用服務</text>
+        <rect x="394" y="86" width="556" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="408" y="104" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B — CNPG 叢集</text>
+
+        <rect x="28" y="118" width="118" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="87" y="140" text-anchor="middle" font-size="12.5" font-weight="600">Client</text>
+        <text x="87" y="158" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">sslnegotiation=direct</text>
+
+        <line x1="146" y1="145" x2="178" y2="145" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="182" y="118" width="164" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="264" y="140" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
+        <text x="264" y="158" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
+
+        <line x1="346" y1="145" x2="404" y2="145" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="410" y="118" width="214" height="54" rx="2" fill="none" style="stroke:var(--a)" stroke-width="1.6"/>
+        <text x="517" y="140" text-anchor="middle" font-size="12.5" font-weight="600" style="fill:var(--a)">NGINX IC</text>
+        <text x="517" y="158" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">tls-passthrough</text>
+
+        <line x1="624" y1="145" x2="662" y2="145" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="668" y="118" width="266" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="801" y="140" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer</text>
+        <text x="801" y="158" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">在此終止 TLS</text>
+
+        <text x="87" y="194" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包即 ClientHello</text>
+        <text x="378" y="194" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+        <text x="517" y="194" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">讀 SNI，不解密</text>
+        <text x="801" y="194" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">需 pgbouncer ≥ 1.25</text>
+
+        <line x1="10" y1="228" x2="950" y2="228" stroke="currentColor" stroke-width="1" stroke-dasharray="2 6" opacity=".45"/>
+
+        <!-- ══════════ LANE B ══════════ -->
+        <text x="10" y="250" font-size="12.5" font-weight="600" style="fill:var(--b)">方案 B · 協定感知代理</text>
+
+        <path d="M87 302 L87 292 L517 292 L517 302" fill="none" style="stroke:var(--b)" stroke-width="1.3"/>
+        <rect x="218" y="283" width="168" height="18" style="fill:var(--surface)"/>
+        <text x="302" y="296" text-anchor="middle" font-size="10.5" style="fill:var(--b)">TLS — 到邊界為止</text>
+        <path d="M517 302 L517 292 L801 292 L801 302" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="4 3" opacity=".7"/>
+        <rect x="611" y="283" width="96" height="18" style="fill:var(--surface)"/>
+        <text x="659" y="296" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">明文 TCP</text>
+
+        <rect x="10" y="314" width="352" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="24" y="332" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER A — 應用服務</text>
+        <rect x="394" y="314" width="556" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="408" y="332" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B — CNPG 叢集</text>
+
+        <rect x="28" y="346" width="118" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="87" y="368" text-anchor="middle" font-size="12.5" font-weight="600">Client</text>
+        <text x="87" y="386" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">sslmode=verify-full</text>
+
+        <line x1="146" y1="373" x2="178" y2="373" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="182" y="346" width="164" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="264" y="368" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
+        <text x="264" y="386" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
+
+        <line x1="346" y1="373" x2="404" y2="373" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="410" y="346" width="214" height="54" rx="2" fill="none" style="stroke:var(--b)" stroke-width="1.6"/>
+        <text x="517" y="368" text-anchor="middle" font-size="12.5" font-weight="600" style="fill:var(--b)">Traefik TCP</text>
+        <text x="517" y="386" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">HostSNI(...)</text>
+
+        <line x1="624" y1="373" x2="662" y2="373" stroke="currentColor" stroke-width="1.2" marker-end="url(#d-ar)"/>
+
+        <rect x="668" y="346" width="266" height="54" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="801" y="368" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer</text>
+        <text x="801" y="386" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">接明文連線</text>
+
+        <text x="87" y="422" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包是 SSLRequest</text>
+        <text x="378" y="422" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+        <text x="517" y="422" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">代答 S → 讀 SNI → 解密</text>
+        <text x="801" y="422" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">client 版本不限</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 — 差別只有一跳。</b> <strong>Cluster A 的內容在兩個方案裡完全相同</strong>：一台純 L4 轉送的 nginx，
+    不解析、不分流，新增 pooler 時完全不用動。所有租戶感知都收在 Cluster B 邊界那一個框裡。
+    A 讀 SNI 但不解密，所以 client 的<strong>首包必須是 ClientHello</strong>（direct TLS）；
+    B 先代答 PostgreSQL 的 <em class="t">SSLRequest</em> 再握手，任何 client 都能連，代價是 TLS 在邊界就結束了。</figcaption>
+  </figure>
+
+  <p>兩者的 wildcard DNS、Cluster A 的 nginx 設定、以及 Pooler 本身的連線池參數都一樣。
+  真正要選的只有一件事：<strong>Cluster B 邊界要不要解密</strong>——而這個選擇會連帶決定 client 端的版本門檻、憑證放哪，
+  以及新增一個 pooler 時會不會影響到其他租戶。</p>
+
+  <div class="call warn">
+    <span class="lbl">Driver 支援現況</span>
+    <p>方案 A 需要的 <em class="t">sslnegotiation=direct</em> 支援度比想像中好，但仍有缺口：
+    <strong>libpq 17+</strong>（psql、psycopg）、<strong>pgx v5</strong>（Go）、<strong>node-postgres</strong> 都已支援；
+    <strong>Rust 的 sqlx</strong> 到目前為止還沒有（issue #3880 仍開著），
+    pgjdbc、asyncpg 等要看你實際用的版本。真正的問題不是「服務是不是我們自己的」，而是<strong>用什麼 driver、版本能不能鎖住</strong>。
+    另外別忘了不是應用服務的那些：BI 工具、GUI client、Grafana datasource——它們內嵌的 driver 通常最舊、也最難升。</p>
+  </div>
+</section>
+
+<section>
+  <h2 class="sec"><span class="num">§2</span> 決策路徑</h2>
+  <p class="sub">前兩題把大部分情況排除掉；你的場景會走到最後一格。</p>
+
+  <figure>
+    <svg viewBox="0 0 940 262" role="img" aria-label="決策樹：若有合規要求禁止在邊界解密則選方案 A；否則若無法保證所有 client 的 libpq 都到 17 以上則選方案 B；即使能保證，兩者皆可但仍建議 B">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ara" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" style="fill:var(--a)"/>
+        </marker>
+        <marker id="arb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" style="fill:var(--b)"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <!-- Q1 -->
+        <rect x="16" y="164" width="228" height="66" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="130" y="192" text-anchor="middle" font-size="12.5">有合規要求禁止</text>
+        <text x="130" y="211" text-anchor="middle" font-size="12.5">在邊界解密？</text>
+
+        <!-- Q1 yes -> A -->
+        <path d="M130 164 L130 118" fill="none" style="stroke:var(--a)" stroke-width="1.4" marker-end="url(#ara)"/>
+        <text x="140" y="146" font-size="11" style="fill:var(--a)">是</text>
+        <rect x="46" y="52" width="168" height="60" rx="2" fill="none" style="stroke:var(--a)" stroke-width="1.6"/>
+        <text x="130" y="78" text-anchor="middle" font-size="14" font-weight="600" style="fill:var(--a)">方案 A</text>
+        <text x="130" y="97" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">TLS 直通</text>
+
+        <!-- Q1 no -> Q2 -->
+        <path d="M244 197 L300 197" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text x="272" y="188" text-anchor="middle" font-size="11">否</text>
+
+        <!-- Q2 -->
+        <rect x="304" y="164" width="256" height="66" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="432" y="192" text-anchor="middle" font-size="12.5">所有 client 的 driver 都支援</text>
+        <text x="432" y="211" text-anchor="middle" font-size="12.5">direct TLS 且版本鎖得住？</text>
+
+        <!-- Q2 no -> B -->
+        <path d="M432 164 L432 118" fill="none" style="stroke:var(--b)" stroke-width="1.4" marker-end="url(#arb)"/>
+        <text x="442" y="146" font-size="11" style="fill:var(--b)">否</text>
+        <rect x="348" y="52" width="168" height="60" rx="2" fill="none" style="stroke:var(--b)" stroke-width="1.6"/>
+        <text x="432" y="78" text-anchor="middle" font-size="14" font-weight="600" style="fill:var(--b)">方案 B</text>
+        <text x="432" y="97" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">協定感知代理</text>
+
+        <!-- Q2 yes -> both -->
+        <path d="M560 197 L616 197" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text x="588" y="188" text-anchor="middle" font-size="11">是</text>
+        <rect x="620" y="160" width="304" height="74" rx="2" fill="none" style="stroke:var(--b)" stroke-width="1.6" stroke-dasharray="4 3"/>
+        <text x="772" y="184" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--b)">兩者皆可 — 看維運成本</text>
+        <text x="772" y="203" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">自動化按需開通 pooler → B</text>
+        <text x="772" y="219" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">偶爾人工建、想省一個元件 → A</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 — 內部場景會走到最右邊那一格。</b> client 幾乎都是自家服務，第二題大致答得出「是」，
+    所以這不是一個被相容性強制的決定，而是維運成本的取捨：
+    <strong>建立 pooler 的頻率高就選 B</strong>（每次 reload 都會波及其他租戶的長連線），
+    偶爾才建、又想少維運一個元件，A 是合理的。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2 class="sec"><span class="num">§3</span> 什麼情況該重新考慮 A</h2>
+  <p class="sub">以下任一條成立，上面的建議就要重新評估——你的場景裡第二、三條都值得認真看。</p>
+
+  <div class="triggers">
+    <div>
+      <span class="n">觸發條件 01</span>
+      <h3>合規要求端到端加密</h3>
+      <p>PCI-DSS、金融內控或客戶合約明文要求 payload 不得在資料庫以外的節點解密。
+      這是 A 唯一無法被取代的優勢——B 再怎麼配 mesh，邊界仍然握有私鑰。</p>
+    </div>
+    <div>
+      <span class="n">觸發條件 02</span>
+      <h3>Driver 清單盤得完</h3>
+      <p><strong>這一條你已經接近成立了。</strong>但「服務是自家的」不等於「driver 支援 direct TLS」——
+      要盤的是實際用到的 driver 與版本，包含 BI 工具和 GUI client 那些你不會 rebuild 的東西。
+      盤得完而且鎖得住，A 的相容性風險就趨近於零。</p>
+    </div>
+    <div>
+      <span class="n">觸發條件 03</span>
+      <h3>不允許再引入邊界元件</h3>
+      <p>組織政策或人力限制，不接受再多一個要值班的 ingress——內部平台團隊常有這個約束，
+      這一條的份量在你的場景裡比一般情況重。選 A 的話務必把
+      <em class="t">worker-shutdown-timeout</em> 調大並批次套用 CR，
+      否則 §6 那個 reload 問題會直接吃掉省下來的維運成本。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="sec"><span class="num">§4</span> 不必二選一</h2>
+  <p class="sub">兩個 port、同一批 pooler，可以同時提供。</p>
+
+  <p>Traefik 的 TCP router 兩種模式都支援。開兩個 entrypoint 指到同一批 pooler：
+  <strong>5432 走終止</strong>服務所有 client，<strong>5433 走 passthrough</strong>給需要端到端加密的那幾個。
+  兩條路共用同一組 wildcard DNS 和同一批 <em class="t">IngressRouteTCP</em>，維運成本幾乎不變。</p>
+
+  <div class="code">
+    <div class="hdr"><span>traefik values.yaml</span><b>混合模式</b></div>
+<pre>ports:
+  postgres:            <span class="c"># 終止 TLS：相容所有 client</span>
+    port: 5432
+    exposedPort: 5432
+  postgres-e2e:        <span class="c"># passthrough：需 libpq ≥ 17</span>
+    port: 5433
+    exposedPort: 5433</pre>
+  </div>
+
+  <div class="call">
+    <span class="lbl">改變主意的成本很低</span>
+    <p>這不是一道單向門。A 和 B 之間切換，<strong>client 的連線字串不用改</strong>——hostname 和 port 一樣，
+    改的只有邊界設定和憑證放哪。真正會卡住的只有一件事：如果先選了 A、憑證已經灌進每個 Cluster，
+    退回 B 時要記得把 Cluster 上的 <em class="t">serverTLSSecret</em> 收回來，
+    否則 wildcard 私鑰會繼續掛在資料庫 namespace 的每一個 pod 裡。</p>
+  </div>
+</section>
+
+<section>
+  <h2 class="sec"><span class="num">§5</span> 選定 B 之後的三件事</h2>
+  <p class="sub">這些不做，B 的優勢會被自己的設定抵消掉。</p>
+
+  <ul>
+    <li><strong>補上邊界到 pooler 的保護。</strong>這是 B 唯一的實質弱點。最低限度是 NetworkPolicy 限制只有 Traefik 的 pod 能連 pooler service；
+    有 mesh 的話直接讓那一段走 mTLS。</li>
+    <li><strong>wildcard 憑證用公開 CA 簽。</strong>這樣 client 端只要寫 <em class="t">sslmode=verify-full</em>，
+    連 <em class="t">sslrootcert</em> 都不用發給對方——做對的事反而變成最省事的路。</li>
+    <li><strong>hostname 由程式推導，不要人工填。</strong>多對多場景下租戶名稱和 SNI 的對應一旦衝突，
+    其中一份 CR 會被靜默拒絕。用 controller 或 Argo template 從 Pooler 名稱生成。</li>
+  </ul>
+
+  <div class="call warn">
+    <span class="lbl">先驗證再決定</span>
+    <p>下結論之前建議先花半天做兩件事：<strong>一是把公司實際在用的 driver 與版本盤一遍</strong>
+    （含 BI 工具、GUI client、Grafana datasource 這些不會 rebuild 的），這決定 A 到底可不可行；
+    <strong>二是拿其中最舊的那個 driver 對 Traefik 的 TCP router 連一次</strong>，確認 STARTTLS 代答在它身上真的成立。
+    第二件事是整個建議唯一依賴的假設。</p>
+  </div>
+</section>
+
+<section>
+  <h2 class="sec"><span class="num">§6</span> 逐項對照</h2>
+  <p class="sub">每一列都是一個實際會發生的情境，不是形容詞。</p>
+
+  <div class="vs">
+    <div class="hd"></div>
+    <div class="hd a">方案 A<small>TLS 直通 · passthrough</small></div>
+    <div class="hd b">方案 B<small>協定感知代理 · Traefik</small></div>
+
+    <div class="dim">Client 相容性<small>內部場景降權</small></div>
+    <div class="a">連線字串要加 <em class="t">sslnegotiation=direct</em>，且 driver 要夠新。
+      libpq 17+、pgx v5、node-postgres 都可以；Rust sqlx 目前還不行，BI / GUI 工具內嵌的 driver 通常最舊。
+      服務是自家的能大幅降低這個風險，但<strong>每個新接進來的 client 仍要確認一次</strong>。</div>
+    <div class="b win"><span class="edge">優勢</span>任何版本都可以，client 端就是最普通的
+      <em class="t">sslmode=verify-full</em>。使用文件寫一次就結束。</div>
+
+    <div class="dim">失敗訊息<small>支援成本</small></div>
+    <div class="a">舊 client 拿到的是 <em class="t">server closed the connection unexpectedly</em>——
+      完全指向錯的方向，對方會先去查自己的網路和防火牆。</div>
+    <div class="b win"><span class="edge">優勢</span>正常的 TLS / 認證錯誤訊息，對方自己看得懂，
+      不會變成你的 ticket。</div>
+
+    <div class="dim">加密範圍<small>資安</small></div>
+    <div class="a win"><span class="edge">優勢</span>client 到 pgbouncer 端到端加密，
+      邊界既不持有私鑰、也解不開 payload。</div>
+    <div class="b">TLS 在邊界終止，邊界到 pooler pod 那一段是明文，
+      要靠 NetworkPolicy 或 service mesh 補回來。</div>
+
+    <div class="dim">憑證管理<small>單一 NS 下降權</small></div>
+    <div class="a">Cluster spec 要填 <em class="t">serverTLSSecret</em>——但所有 Cluster 同一個 namespace 時
+      Secret 只有一份，沒有跨 namespace 同步問題，成本接近零。
+      待驗證：續憑證後 pooler 會不會自動載入。</div>
+    <div class="b win"><span class="edge">優勢</span>邊界一個 Secret，Cluster 完全不用動。
+      差別只剩<strong>私鑰住在哪</strong>：A 之下它掛進資料庫 namespace 的每一個 pod，B 之下只在 ingress 側。</div>
+
+    <div class="dim">新增元件<small>維運</small></div>
+    <div class="a win"><span class="edge">優勢</span>沿用現有的 NGINX Ingress Controller，
+      只多開一個 <em class="t">-enable-tls-passthrough</em>。</div>
+    <div class="b">多一個 Traefik（或約 150 行的自寫 proxy）要部署、升版、監控、值班。</div>
+
+    <div class="dim">新增 pooler 的影響範圍<small>決定性</small></div>
+    <div class="a">每套用一份 CR 就觸發 nginx reload。舊 worker 在
+      <em class="t">worker_shutdown_timeout</em>（ingress-nginx 預設 240s）後被強制關閉——
+      <strong>新增 tenant50，斷的是 tenant1–49 正在跑的交易</strong>。</div>
+    <div class="b win"><span class="edge">優勢</span>in-process 更新路由表，
+      既有 TCP 連線不受影響。「不斷有新 pooler」正是這個差異會放大的場景。</div>
+
+    <div class="dim">邊界可觀測性<small>除錯</small></div>
+    <div class="a">純 bytes 轉送，log 只有 SNI、連線數、傳輸量。
+      握手為什麼失敗，邊界一無所知。</div>
+    <div class="b win"><span class="edge">優勢</span>邊界持有憑證，
+      能記錄 TLS 版本、憑證錯誤、握手失敗原因——問題出在哪一跳查得出來。</div>
+
+    <div class="dim">版本相依落在哪<small>核心差異</small></div>
+    <div class="a">libpq ≥ 17（<strong>client 側，你控制不了</strong>）、
+      pgbouncer ≥ 1.25、NGINX IC 要開 passthrough。</div>
+    <div class="b win"><span class="edge">優勢</span>Traefik ≥ 2.4
+      （<strong>平台側，你控制得了</strong>）。client 側零要求。</div>
+  </div>
+  <p class="vs-note">底色標示的是該面向較優的一側。</p>
+</section>
+
+<footer>
+  <p>延伸閱讀：完整的架構評估、nginx 與 CNPG Pooler 設定、以及上線後會咬人的地方，見另一份〈跨叢集 Pooler 路由設計〉。</p>
+  <p>參考：<a href="https://github.com/traefik/traefik/pull/9377">Traefik PR #9377 — Postgres STARTTLS SNI routing</a> ·
+  <a href="https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/">ingress-nginx ConfigMap — worker-shutdown-timeout</a> ·
+  <a href="https://github.com/pgbouncer/pgbouncer/pull/1359">pgbouncer PR #1359 — client-side direct TLS</a> ·
+  <a href="https://cloudnative-pg.io/docs/1.26/connection_pooling">CloudNativePG — Connection pooling</a></p>
+</footer>
+
+</div>
+</body>
+</html>

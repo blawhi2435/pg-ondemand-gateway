@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>TLS 直通設定清單</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#eef0f3; --surface:#fbfbfd; --surface-2:#e3e7ee;
+  --line:#c5ccd8; --line-soft:#d9dfe8;
+  --ink:#12151f; --ink-2:#4c5468; --ink-3:#79839a;
+  --accent:#37407e; --accent-soft:#e2e6f4;
+  --stop:#a5361d; --stop-soft:#f7e5df;
+  --warn:#8a6410; --warn-soft:#f4ecd9;
+  --shadow:0 1px 2px rgba(18,21,31,.06), 0 8px 24px -16px rgba(18,21,31,.4);
+  --col:700px; --wide:1000px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e1017; --surface:#171b26; --surface-2:#1f2532;
+    --line:#2f374a; --line-soft:#262d3c;
+    --ink:#e6e9f2; --ink-2:#a2abc0; --ink-3:#7c8699;
+    --accent:#98a4ee; --accent-soft:#1b2040;
+    --stop:#f2907a; --stop-soft:#391d16;
+    --warn:#dfab55; --warn-soft:#332810;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e1017; --surface:#171b26; --surface-2:#1f2532;
+  --line:#2f374a; --line-soft:#262d3c;
+  --ink:#e6e9f2; --ink-2:#a2abc0; --ink-3:#7c8699;
+  --accent:#98a4ee; --accent-soft:#1b2040;
+  --stop:#f2907a; --stop-soft:#391d16;
+  --warn:#dfab55; --warn-soft:#332810;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  font-size:15.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 24px 90px}
+p{margin:0 0 14px}
+a{color:var(--accent)}
+strong{font-weight:600;color:var(--ink)}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.87em;
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;color:var(--ink)}
+td,th,p,li{overflow-wrap:anywhere}
+
+/* masthead */
+.mast{border-bottom:2px solid var(--ink);padding:52px 0 20px;margin-bottom:30px}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 13px}
+h1{font-weight:700;font-size:clamp(30px,4.6vw,46px);line-height:1.08;letter-spacing:-.02em;
+  margin:0 0 14px;text-wrap:balance;max-width:15em}
+.dek{font-size:17px;color:var(--ink-2);max-width:640px;margin:0}
+
+/* index strip */
+.idx{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+  margin:0 0 50px;box-shadow:var(--shadow)}
+.idx a{background:var(--surface);padding:13px 15px;text-decoration:none;display:block;color:inherit}
+.idx a:hover{background:var(--accent-soft)}
+.idx .n{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;
+  color:var(--accent);font-weight:600;display:block;margin-bottom:4px}
+.idx .t{font-size:14px;font-weight:600;line-height:1.35;display:block}
+.idx .w{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3);
+  display:block;margin-top:4px;letter-spacing:.03em}
+
+/* sections */
+section{margin:0 0 52px;scroll-margin-top:16px}
+h2{font-weight:600;font-size:22px;line-height:1.3;letter-spacing:-.01em;margin:0 0 4px;
+  display:flex;align-items:baseline;gap:12px}
+h2 .num{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent);flex:none}
+h2 .where{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;margin-left:auto;flex:none;
+  border:1px solid var(--line);padding:2px 7px;border-radius:2px;white-space:nowrap}
+h2 + .sub{margin:0 0 20px;padding-left:36px;color:var(--ink-3);font-size:13.5px;max-width:var(--col)}
+h3{font-weight:600;font-size:15.5px;margin:26px 0 6px}
+section > p,section > ul{max-width:var(--col)}
+ul{margin:0 0 14px;padding-left:1.3em}
+li{margin:0 0 6px}
+li::marker{color:var(--ink-3)}
+
+/* code */
+.code{background:var(--surface);border:1px solid var(--line);margin:16px 0;
+  box-shadow:var(--shadow);max-width:100%}
+.code .hdr{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  color:var(--ink-3);padding:8px 15px;border-bottom:1px solid var(--line-soft);
+  background:var(--surface-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.code .hdr b{color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.1em}
+.code pre{margin:0;padding:15px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;
+  font-size:12.4px;line-height:1.68;color:var(--ink)}
+.code pre .c{color:var(--ink-3)}
+.code pre .k{color:var(--accent);font-weight:500}
+.code pre .w{color:var(--warn);font-weight:500}
+
+/* note */
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);
+  padding:13px 16px;margin:16px 0;font-size:13.5px;line-height:1.62;max-width:var(--col)}
+.note.stop{border-left-color:var(--stop);background:var(--stop-soft)}
+.note .l{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:4px;color:var(--warn)}
+.note.stop .l{color:var(--stop)}
+.note p:last-child{margin-bottom:0}
+.note ul{margin:6px 0 0}
+
+footer{margin-top:54px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;color:var(--ink-3);line-height:1.7;max-width:var(--col)}
+footer a{color:var(--ink-2)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (max-width:640px){
+  .wrap{padding:0 16px 64px}
+  h2{flex-wrap:wrap}
+  h2 .where{margin-left:0;order:3;flex-basis:100%}
+  h2 + .sub{padding-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">設定清單 · TLS 直通</p>
+  <h1>TLS 直通設定清單</h1>
+  <p class="dek">依套用順序列出所有設定檔。每個 pooler 只有第 5 步需要重複，其餘皆為一次性。
+  架構說明與注意事項見另一份〈Pooler TLS 直通架構〉。</p>
+</header>
+
+<nav class="idx">
+  <a href="#s1"><span class="n">STEP 1</span><span class="t">憑證 Secret</span><span class="w">CLUSTER B · 一次性</span></a>
+  <a href="#s2"><span class="n">STEP 2</span><span class="t">NGINX Ingress Controller</span><span class="w">CLUSTER B · 一次性</span></a>
+  <a href="#s3"><span class="n">STEP 3</span><span class="t">Cluster 憑證設定</span><span class="w">CLUSTER B · 每個 Cluster</span></a>
+  <a href="#s4"><span class="n">STEP 4</span><span class="t">Pooler</span><span class="w">CLUSTER B · 每個 pooler</span></a>
+  <a href="#s5"><span class="n">STEP 5</span><span class="t">TransportServer</span><span class="w">CLUSTER B · 每個 pooler</span></a>
+  <a href="#s6"><span class="n">STEP 6</span><span class="t">nginx stream</span><span class="w">CLUSTER A · 一次性</span></a>
+  <a href="#s7"><span class="n">STEP 7</span><span class="t">Client 連線字串</span><span class="w">CLIENT</span></a>
+</nav>
+
+<section id="s1">
+  <h2><span class="num">01</span> 憑證 Secret<span class="where">Cluster B · namespace cnpg</span></h2>
+  <p class="sub">其他步驟都依賴這兩個 Secret，必須先建立。</p>
+
+  <p>CNPG <strong>不會建立這些 Secret</strong>，它只讀取你指定名稱的既有 Secret。
+  Secret 必須與 Cluster 位於同一個 namespace；所有 Cluster 在同一 namespace 時，兩個 Secret 各只需要一份。</p>
+
+  <h3>方式 A — 已有憑證檔案</h3>
+  <div class="code">
+    <div class="hdr"><span>kubectl</span><b>手動建立</b></div>
+<pre><span class="c"># serverTLSSecret：型別必須是 kubernetes.io/tls，key 為 tls.crt / tls.key</span>
+kubectl -n cnpg create secret tls <span class="k">db-wildcard-tls</span> \
+  --cert=fullchain.pem \
+  --key=privkey.pem
+
+<span class="c"># serverCASecret：Opaque 即可，但 key 名稱必須是 ca.crt</span>
+kubectl -n cnpg create secret generic <span class="k">db-wildcard-ca</span> \
+  --from-file=ca.crt=chain.pem</pre>
+  </div>
+
+  <div class="note">
+    <span class="l">注意</span>
+    <p><code>--cert</code> 要給 <strong>fullchain</strong>（leaf + 中繼憑證），只放 leaf 會導致 client 端驗證缺鏈。</p>
+  </div>
+
+  <h3>方式 B — cert-manager 自動簽發與續期</h3>
+  <div class="code">
+    <div class="hdr"><span>certificate.yaml</span><b>cert-manager</b></div>
+<pre>apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: db-wildcard
+  namespace: cnpg                  <span class="c"># 必須與 Cluster 同 namespace</span>
+spec:
+  <span class="k">secretName: db-wildcard-tls</span>      <span class="c"># 即 serverTLSSecret 要填的名稱</span>
+  dnsNames:
+    - "*.db.example.com"
+  issuerRef:
+    name: internal-ca
+    kind: ClusterIssuer</pre>
+  </div>
+
+  <div class="note stop">
+    <span class="l">ca.crt 不一定會產生</span>
+    <p>cert-manager 產生的 Secret 裡有沒有 <code>ca.crt</code> 取決於 issuer：</p>
+    <ul>
+      <li><strong>內部 CA</strong>（CA Issuer、Vault 等）— Secret 同時包含 <code>tls.crt</code> / <code>tls.key</code> / <code>ca.crt</code>。
+      此時 <code>serverTLSSecret</code> 與 <code>serverCASecret</code> 可以都填 <code>db-wildcard-tls</code>。</li>
+      <li><strong>ACME / Let's Encrypt</strong> — cert-manager <strong>不會</strong>產生 <code>ca.crt</code>（設計上的行為，因為 CA 是公開根憑證）。
+      此時 <code>serverCASecret</code> 需另外以方式 A 手動建立，內容放該 CA 的中繼與根憑證。</li>
+    </ul>
+  </div>
+
+  <div class="note">
+    <span class="l">SAN 限制</span>
+    <p><code>*.db.example.com</code> 只涵蓋一層 label：對得上 <code>tenant1.db.example.com</code>，
+    對不上 <code>pooler.tenant1.db.example.com</code>。hostname 命名規則需固定為單層。</p>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="num">02</span> NGINX Ingress Controller<span class="where">Cluster B</span></h2>
+  <p class="sub">建議為 DB 流量部署獨立實例，與 HTTP ingress 分離。</p>
+
+  <div class="code">
+    <div class="hdr"><span>deployment.yaml（節錄）</span><b>controller args</b></div>
+<pre>spec:
+  template:
+    spec:
+      containers:
+        - name: nginx-ingress
+          args:
+            - -nginx-configmaps=$(POD_NAMESPACE)/nginx-config-db
+            - -global-configuration=$(POD_NAMESPACE)/nginx-configuration-db
+            - <span class="k">-ingress-class=nginx-db</span>          <span class="c"># 獨立 class，不接手 HTTP ingress</span>
+            - <span class="k">-enable-tls-passthrough</span>
+            - <span class="k">-tls-passthrough-port=5432</span>       <span class="c"># 不使用預設的 443</span></pre>
+  </div>
+
+  <div class="code">
+    <div class="hdr"><span>service.yaml</span><b>必須開放該 port</b></div>
+<pre>apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-ingress-db
+  namespace: nginx-ingress
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx-ingress-db
+  ports:
+    - name: postgres
+      <span class="k">port: 5432</span>
+      targetPort: 5432
+      protocol: TCP</pre>
+  </div>
+
+  <div class="code">
+    <div class="hdr"><span>configmap.yaml</span><b>reload 行為</b></div>
+<pre>apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config-db
+  namespace: nginx-ingress
+data:
+  <span class="w">worker-shutdown-timeout: "1h"</span>   <span class="c"># 預設值會在 reload 後中斷長連線</span>
+  stream-log-format: '$remote_addr [$time_local] $status
+    $bytes_sent/$bytes_received $session_time "$ssl_preread_server_name"'</pre>
+  </div>
+
+  <div class="note">
+    <span class="l">為什麼要獨立實例</span>
+    <p>reload 由該 controller 上<strong>任何</strong>資源變更觸發，不限於 TransportServer。
+    與 HTTP ingress 共用時，HTTP 的變更頻率會決定資料庫連線的存活時間。
+    獨立實例後，只有自己建立 pooler 時才會 reload。</p>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="num">03</span> Cluster 憑證設定<span class="where">Cluster B · 每個 Cluster</span></h2>
+  <p class="sub">直通模式由 PgBouncer 出示憑證，而 Pooler 沿用所屬 Cluster 的 server 憑證。</p>
+
+  <div class="code">
+    <div class="hdr"><span>cluster.yaml（節錄）</span><b>CNPG</b></div>
+<pre>apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tenant1-db
+  namespace: cnpg
+spec:
+  certificates:
+    <span class="k">serverTLSSecret: db-wildcard-tls</span>   <span class="c"># 步驟 1 建立</span>
+    <span class="k">serverCASecret:  db-wildcard-ca</span>    <span class="c"># 步驟 1 建立</span>
+
+<span class="c"># 每個 Cluster 填相同的兩個名稱即可，Secret 本身不需要複製。</span>
+<span class="c"># client 與 replication 憑證仍由 operator 自行管理，不需變更。</span></pre>
+  </div>
+
+  <div class="note">
+    <span class="l">套用順序</span>
+    <p>Secret 必須先存在，否則套用 Cluster 後 operator 會停在等待狀態。</p>
+  </div>
+
+  <div class="note stop">
+    <span class="l">憑證輪替</span>
+    <p>cert-manager 更新 Secret 後，CNPG 是否觸發 PgBouncer 重載憑證，文件未明確說明。
+    在續期流程後加入一次 Pooler rollout，並對憑證到期日設定告警。</p>
+  </div>
+</section>
+
+<section id="s4">
+  <h2><span class="num">04</span> Pooler<span class="where">Cluster B · 每個 pooler</span></h2>
+  <p class="sub">直通模式下 TLS 握手與 ALPN 由 PgBouncer 負責，需 1.25 以上。</p>
+
+  <div class="code">
+    <div class="hdr"><span>pooler.yaml</span><b>CNPG</b></div>
+<pre>apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: tenant1-pooler              <span class="c"># Service 會使用相同名稱</span>
+  namespace: cnpg
+spec:
+  cluster:
+    name: tenant1-db
+  instances: 3
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      <span class="k">client_tls_sslmode: "require"</span>
+      max_client_conn: "1000"
+      default_pool_size: "25"
+      max_db_connections: "80"
+      ignore_startup_parameters: "extra_float_digits,options"
+
+      <span class="c"># 跨叢集長連線：讓失效的 TCP session 被回收</span>
+      <span class="w">tcp_keepalive: "1"</span>
+      <span class="w">tcp_keepidle: "30"</span>
+      <span class="w">tcp_keepintvl: "10"</span>
+      <span class="w">tcp_keepcnt: "3"</span>
+      client_idle_timeout: "0"        <span class="c"># 交由 nginx / LB 控制，避免兩邊互踢</span>
+      server_idle_timeout: "600"
+      server_lifetime: "3600"
+      query_wait_timeout: "120"
+
+      log_connections: "1"
+      log_disconnections: "1"
+  serviceTemplate:
+    spec:
+      type: ClusterIP               <span class="c"># 不需要 NodePort / LoadBalancer</span></pre>
+  </div>
+
+  <div class="note">
+    <span class="l">連線數上限</span>
+    <p><code>instances × max_client_conn</code> 決定邊界需維持的並發 TCP session；
+    <code>instances × default_pool_size × (db, user) 組合數</code> 必須小於 PostgreSQL 的
+    <code>max_connections</code> 減去保留連線。以 <code>max_db_connections</code> 設硬上限。</p>
+  </div>
+
+  <div class="note">
+    <span class="l">operator 管理的項目</span>
+    <p><code>[databases]</code>、<code>[users]</code> 以及所有 <code>*_tls_*_file</code> 由 operator 管理，
+    寫入會被忽略或被 webhook 拒絕。可設定的參數為白名單，以所使用的 CNPG 版本文件為準。</p>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="num">05</span> TransportServer<span class="where">Cluster B · 每個 pooler</span></h2>
+  <p class="sub">新增 pooler 時唯一需要重複建立的資源。</p>
+
+  <div class="code">
+    <div class="hdr"><span>transportserver.yaml</span><b>NGINX IC</b></div>
+<pre>apiVersion: k8s.nginx.org/v1
+kind: TransportServer
+metadata:
+  name: tenant1-pg
+  namespace: cnpg
+spec:
+  listener:
+    name: tls-passthrough          <span class="c"># 內建 listener，不需在 GlobalConfiguration 宣告</span>
+    protocol: TLS_PASSTHROUGH
+  <span class="k">host: tenant1.db.example.com</span>   <span class="c"># SNI 比對值</span>
+  upstream:
+    name: tenant1-pooler
+    service: tenant1-pooler        <span class="c"># 步驟 4 的 Pooler 同名 Service</span>
+    port: 5432
+    maxFails: 2
+    failTimeout: 10s
+  upstreamParameters:
+    connectTimeout: 5s
+    nextUpstreamTimeout: 10s
+  sessionParameters:
+    <span class="w">timeout: 60m</span>                 <span class="c"># 預設 10m</span>
+  action:
+    pass: tenant1-pooler</pre>
+  </div>
+
+  <div class="note">
+    <span class="l">唯一性</span>
+    <p><code>(listener, host)</code> 的組合必須全域唯一，重複時其中一份 CR 會被拒絕，
+    且不一定有明顯的錯誤回饋。hostname 建議由 controller 或 template 從 Pooler 名稱推導，不由人工填寫。</p>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="num">06</span> nginx stream<span class="where">Cluster A</span></h2>
+  <p class="sub">不解析、不分流，所有租戶轉往同一個 Cluster B 入口。新增 pooler 時不需變更。</p>
+
+  <div class="code">
+    <div class="hdr"><span>/etc/nginx/nginx.conf</span><b>Cluster A</b></div>
+<pre><span class="c"># stream 與 http 同層，不在 http 區塊內</span>
+stream {
+    log_format pg '$remote_addr [$time_local] $status '
+                  '$bytes_sent/$bytes_received $session_time';
+    access_log /var/log/nginx/pg.log pg;
+
+    upstream cluster_b_edge {
+        <span class="c"># 列出 Cluster B 的 ingress 節點或 LB VIP</span>
+        server 10.20.0.11:5432 max_fails=3 fail_timeout=10s;
+        server 10.20.0.12:5432 max_fails=3 fail_timeout=10s;
+    }
+
+    server {
+        listen 5432;
+        proxy_pass cluster_b_edge;
+
+        proxy_connect_timeout   5s;
+        <span class="w">proxy_timeout           1h;</span>   <span class="c"># 預設 10m</span>
+        <span class="w">proxy_socket_keepalive  on;</span>
+
+        <span class="c"># 不要啟用 proxy_protocol：PgBouncer 不支援</span>
+    }
+}</pre>
+  </div>
+
+  <div class="note">
+    <span class="l">DNS</span>
+    <p>一筆 <code>*.db.example.com</code> 指向此 nginx 的 VIP 即可。
+    新增 pooler 不需要新增 DNS 記錄。</p>
+  </div>
+</section>
+
+<section id="s7">
+  <h2><span class="num">07</span> Client 連線字串<span class="where">Client</span></h2>
+  <p class="sub">直通模式下 client 必須使用 direct TLS。</p>
+
+  <div class="code">
+    <div class="hdr"><span>連線字串</span><b>libpq ≥ 17</b></div>
+<pre>host=tenant1.db.example.com
+port=5432
+dbname=app
+user=app
+sslmode=verify-full
+<span class="k">sslnegotiation=direct</span>              <span class="c"># 必要：首包直接送 ClientHello</span>
+sslrootcert=/etc/ssl/certs/ca.crt   <span class="c"># 公開 CA 簽發時可省略</span>
+<span class="w">keepalives=1</span>
+<span class="w">keepalives_idle=30</span>
+<span class="w">keepalives_interval=10</span></pre>
+  </div>
+
+  <div class="code">
+    <div class="hdr"><span>URI 形式</span><b>同上</b></div>
+<pre>postgresql://app@tenant1.db.example.com:5432/app\
+?sslmode=verify-full\
+&amp;sslnegotiation=direct\
+&amp;keepalives=1&amp;keepalives_idle=30&amp;keepalives_interval=10</pre>
+  </div>
+
+  <div class="note stop">
+    <span class="l">Driver 支援</span>
+    <p>libpq 17+、pgx v5、node-postgres 已支援 <code>sslnegotiation=direct</code>；
+    Rust 的 sqlx 目前未支援；pgjdbc、asyncpg 需依版本確認。
+    不支援的 client 得到的錯誤是 <code>server closed the connection unexpectedly</code>，訊息不指向 TLS 交涉方式。</p>
+  </div>
+</section>
+
+<footer>
+  <p>版本相依：direct TLS 需 PostgreSQL 17+ 的 libpq 與 PgBouncer 1.25+
+  （CNPG 1.26 / 1.27 起新建 Pooler 預設 1.25.1，既有 Pooler 不會自動升級）。</p>
+  <p>參考：<a href="https://cloudnative-pg.io/docs/1.26/connection_pooling">CloudNativePG Connection pooling</a> ·
+  <a href="https://cloudnative-pg.io/documentation/1.27/certificates/">CloudNativePG Certificates</a> ·
+  <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/transportserver-resource/">NGINX IC TransportServer</a> ·
+  <a href="https://cert-manager.io/docs/usage/certificate/">cert-manager Certificate</a></p>
+</footer>
+
+</div>
+</body>
+</html>

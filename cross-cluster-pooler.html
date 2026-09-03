@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>跨叢集 Pooler 路由設計</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --paper:#eef2f4;
+  --surface:#fbfcfc;
+  --surface-2:#e2e9ec;
+  --line:#c3d0d5;
+  --line-soft:#d8e1e4;
+  --ink:#0e1a20;
+  --ink-2:#4b626c;
+  --ink-3:#758b94;
+  --wire:#0a6a84;
+  --wire-soft:#dcedf2;
+  --amber:#8f5c00;
+  --amber-soft:#f6ecd9;
+  --danger:#9d2f27;
+  --danger-soft:#f7e3e1;
+  --ok:#256a4d;
+  --ok-soft:#dbeae2;
+  --shadow:0 1px 2px rgba(14,26,32,.06), 0 8px 24px -16px rgba(14,26,32,.35);
+  --col:660px;
+  --wide:1000px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0b1418;
+    --surface:#121e24;
+    --surface-2:#1a2930;
+    --line:#2a3f48;
+    --line-soft:#213038;
+    --ink:#e4edf0;
+    --ink-2:#9ab0b8;
+    --ink-3:#6f8790;
+    --wire:#54c3e0;
+    --wire-soft:#0d2b35;
+    --amber:#dfa64f;
+    --amber-soft:#2f2410;
+    --danger:#ef8b7f;
+    --danger-soft:#371b18;
+    --ok:#6ec79a;
+    --ok-soft:#10301f;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0b1418; --surface:#121e24; --surface-2:#1a2930; --line:#2a3f48; --line-soft:#213038;
+  --ink:#e4edf0; --ink-2:#9ab0b8; --ink-3:#6f8790; --wire:#54c3e0; --wire-soft:#0d2b35;
+  --amber:#dfa64f; --amber-soft:#2f2410; --danger:#ef8b7f; --danger-soft:#371b18;
+  --ok:#6ec79a; --ok-soft:#10301f;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Serif","Noto Serif TC",Georgia,serif;
+  font-size:16px;
+  line-height:1.72;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 24px 96px;}
+
+/* ---------- masthead ---------- */
+.mast{
+  border-bottom:2px solid var(--ink);
+  padding:56px 0 20px;
+  margin-bottom:38px;
+}
+.mast .kicker{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--wire);margin:0 0 14px;
+}
+h1{
+  font-family:"IBM Plex Sans Condensed","Noto Sans TC",system-ui,sans-serif;
+  font-weight:700;font-size:clamp(34px,5.2vw,54px);line-height:1.05;
+  letter-spacing:-.015em;margin:0 0 16px;text-wrap:balance;max-width:15em;
+}
+.mast .dek{
+  font-size:18px;color:var(--ink-2);max-width:640px;margin:0;
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:22px;
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);
+  letter-spacing:.03em;
+}
+.meta b{color:var(--ink-2);font-weight:500}
+
+/* ---------- verdict ---------- */
+.verdict{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+  margin:0 0 52px;
+}
+.verdict > div{background:var(--surface);padding:20px 22px 22px}
+.verdict h3{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;margin:0 0 10px;font-weight:600;
+}
+.verdict p{margin:0;font-size:14.5px;line-height:1.62;color:var(--ink-2)}
+.v-ok h3{color:var(--ok)}
+.v-warn h3{color:var(--amber)}
+.v-stop h3{color:var(--danger)}
+
+/* ---------- sections ---------- */
+main{max-width:none;margin:0}
+section{margin:0 0 62px}
+/* 文字欄限寬；圖、程式碼、表格用整欄 */
+section > p,
+section > ul,
+section > ol,
+h2 + .sub,
+.call{max-width:var(--col)}
+section > ol.check{max-width:760px}
+h2{
+  font-family:"IBM Plex Sans Condensed","Noto Sans TC",system-ui,sans-serif;
+  font-weight:600;font-size:27px;line-height:1.2;letter-spacing:-.01em;
+  margin:0 0 6px;text-wrap:balance;
+  display:flex;align-items:baseline;gap:12px;
+}
+h2 .num{
+  font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:500;
+  color:var(--wire);flex:none;letter-spacing:.02em;
+}
+h2 + .sub{
+  margin:0 0 26px 0;color:var(--ink-3);font-size:14.5px;font-style:italic;
+  padding-left:42px;
+}
+h3.h{
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-weight:600;font-size:18px;margin:34px 0 8px;letter-spacing:-.005em;
+}
+p{margin:0 0 16px}
+a{color:var(--wire)}
+strong{font-weight:600;color:var(--ink)}
+em.t{font-style:normal;font-family:"IBM Plex Mono",monospace;font-size:.88em;
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;color:var(--ink)}
+ul,ol{margin:0 0 16px;padding-left:1.35em}
+li{margin:0 0 8px}
+li::marker{color:var(--ink-3)}
+
+/* ---------- figures ---------- */
+figure{
+  margin:30px 0;background:var(--surface);border:1px solid var(--line);
+  padding:24px 22px 16px;box-shadow:var(--shadow);
+}
+figure.bleed{width:100%}
+figure,.code,.tw,.call,.check{max-width:100%}
+td,th,p,li{overflow-wrap:anywhere}
+figure svg{display:block;width:100%;max-width:100%;height:auto;color:var(--ink-2)}
+figcaption{
+  margin-top:16px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-size:13px;line-height:1.6;color:var(--ink-3);
+}
+figcaption b{color:var(--ink-2);font-weight:600}
+
+/* byte figure */
+.bytes{overflow-x:auto}
+.byterow{
+  display:grid;grid-template-columns:190px 1fr;gap:18px;align-items:start;
+  padding:14px 0;border-top:1px solid var(--line-soft);
+}
+.byterow:first-of-type{border-top:0;padding-top:0}
+.byterow .who{
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-weight:600;font-size:14.5px;line-height:1.35;
+}
+.byterow .who small{display:block;font-family:"IBM Plex Mono",monospace;
+  font-weight:400;font-size:11px;color:var(--ink-3);letter-spacing:.02em;margin-top:3px}
+.oct{display:flex;gap:5px;flex-wrap:wrap;font-family:"IBM Plex Mono",monospace;font-size:13px}
+.oct span{
+  min-width:31px;text-align:center;padding:4px 0;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--ink-2);border-radius:2px;
+}
+.oct span.hi{background:var(--wire);border-color:var(--wire);color:var(--paper);font-weight:600}
+.oct span.bad{background:var(--danger-soft);border-color:var(--danger);color:var(--danger);font-weight:600}
+.oct span.el{border:0;background:none;min-width:auto;color:var(--ink-3)}
+.byterow .note{font-size:12.5px;color:var(--ink-3);margin-top:7px;line-height:1.5}
+
+/* ---------- code ---------- */
+.code{
+  background:var(--surface);border:1px solid var(--line);
+  margin:20px 0;box-shadow:var(--shadow);
+}
+.code .hdr{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);
+  padding:9px 16px;border-bottom:1px solid var(--line-soft);
+  background:var(--surface-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;
+}
+.code .hdr b{color:var(--wire);font-weight:600;letter-spacing:.09em}
+.code pre{
+  margin:0;padding:16px;overflow-x:auto;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:12.6px;line-height:1.68;color:var(--ink);
+  tab-size:2;
+}
+.code pre .c{color:var(--ink-3);font-style:italic}
+.code pre .k{color:var(--wire);font-weight:500}
+.code pre .w{color:var(--amber);font-weight:500}
+
+/* ---------- table ---------- */
+.tw{overflow-x:auto;margin:24px 0;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px}
+th,td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-soft)}
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:600;
+  background:var(--surface-2);border-bottom:1px solid var(--line);
+}
+tbody tr:last-child td{border-bottom:0}
+td.opt{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;font-weight:600;font-size:14.5px;white-space:nowrap}
+td.opt small{display:block;font-family:"IBM Plex Mono",monospace;font-weight:400;font-size:10.5px;color:var(--ink-3);letter-spacing:.04em;margin-top:2px;text-transform:uppercase}
+tr.rec{background:var(--wire-soft)}
+.pill{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.06em;padding:2px 7px;border-radius:2px;white-space:nowrap;font-weight:600;
+}
+.pill.g{background:var(--ok-soft);color:var(--ok)}
+.pill.a{background:var(--amber-soft);color:var(--amber)}
+.pill.r{background:var(--danger-soft);color:var(--danger)}
+
+/* ---------- callouts ---------- */
+.call{
+  border-left:3px solid var(--amber);background:var(--amber-soft);
+  padding:14px 18px;margin:22px 0;font-size:14.5px;line-height:1.65;
+}
+.call.stop{border-left-color:var(--danger);background:var(--danger-soft)}
+.call.go{border-left-color:var(--ok);background:var(--ok-soft)}
+.call .lbl{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:5px;color:var(--amber);
+}
+.call.stop .lbl{color:var(--danger)} .call.go .lbl{color:var(--ok)}
+.call p:last-child{margin-bottom:0}
+
+/* ---------- checklist ---------- */
+.check{list-style:none;padding:0;margin:22px 0;counter-reset:ck}
+.check li{
+  display:grid;grid-template-columns:34px 1fr;gap:14px;
+  padding:13px 0;border-top:1px solid var(--line-soft);margin:0;
+}
+.check li:first-child{border-top:0}
+.check li > div{min-width:0}
+.check li::before{
+  counter-increment:ck;content:counter(ck,decimal-leading-zero);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--wire);
+  font-weight:600;padding-top:4px;
+}
+.check b{
+  display:block;font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-size:15.5px;font-weight:600;margin-bottom:2px;
+}
+.check span{font-size:14px;color:var(--ink-2);line-height:1.6}
+
+footer{
+  max-width:var(--wide);margin:70px 0 0;padding-top:22px;
+  border-top:2px solid var(--ink);
+  font-size:12.5px;color:var(--ink-3);line-height:1.75;
+}
+footer a{color:var(--ink-2)}
+footer p{max-width:var(--col)}
+footer h4{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 8px;font-weight:600}
+:focus-visible{outline:2px solid var(--wire);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (max-width:640px){
+  .byterow{grid-template-columns:1fr;gap:8px}
+  h2{gap:9px}
+  h2 + .sub{padding-left:0}
+  .wrap{padding:0 16px 70px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">架構評估 · CloudNativePG × 跨叢集入口</p>
+  <h1>跨叢集連線到 CNPG Pooler 的路由設計</h1>
+  <p class="dek">用 wildcard 網域取代 <em class="t">ip:nodePort</em>，讓 cluster A 的 client 連到 cluster B 中任意一個 PgBouncer Pooler ——
+  拓撲沒問題，但「用 nginx 依 SNI 分流 PostgreSQL」這個前提，在預設的 libpq 之下是不成立的。</p>
+  <div class="meta">
+    <span><b>Scope</b> nginx stream · NGINX IC TransportServer · CNPG Pooler</span>
+    <span><b>Date</b> 2026-09-03</span>
+  </div>
+</header>
+
+<div class="verdict">
+  <div class="v-ok">
+    <h3>◆ 拓撲可行</h3>
+    <p>DNS → cluster A nginx (L4) → cluster B ingress → pooler pod 這條鏈本身沒有結構性問題，也確實能避開 nodePort。CNPG Pooler 是普通的 Service，接得上。</p>
+  </div>
+  <div class="v-stop">
+    <h3>■ 有一個會直接壞掉的前提</h3>
+    <p>PostgreSQL 預設用 <em class="t">SSLRequest</em> 做 STARTTLS，第一個封包<strong>不是</strong> TLS ClientHello。nginx 的 <em class="t">ssl_preread</em> 讀不到 SNI，wildcard 分流會全部落到 default backend。</p>
+  </div>
+  <div class="v-warn">
+    <h3>▲ pgbouncer 改動很小</h3>
+    <p>真正要動的是 <em class="t">client_tls_sslmode</em>、憑證的 SAN，以及三層 idle timeout 與 TCP keepalive。連線池參數本身沿用原本的即可。</p>
+  </div>
+</div>
+
+<main>
+
+<section id="s1">
+  <h2><span class="num">§1</span> 為什麼 SNI 分流預設會失敗</h2>
+  <p class="sub">這是整個設計唯一的技術阻斷點，其他都是設定細節。</p>
+
+  <p>你原本在同叢集內用 k8s DNS 連線，所以從來沒碰過這件事：<strong>PostgreSQL 的連線不是以 TLS 開場的。</strong>
+  libpq 先建立明文 TCP，送出一個 8 bytes 的 <em class="t">SSLRequest</em> 封包，等 server 回一個 byte（<em class="t">S</em> 或 <em class="t">N</em>），
+  才開始 TLS 握手。也就是說，SNI 出現在<strong>第二次</strong>往返，而 nginx <em class="t">ngx_stream_ssl_preread_module</em> 只看第一個封包。</p>
+
+  <figure class="bytes">
+    <div class="byterow">
+      <div class="who">TLS ClientHello<small>ssl_preread 認得</small></div>
+      <div>
+        <div class="oct">
+          <span class="hi">16</span><span>03</span><span>01</span><span>0x</span><span>xx</span>
+          <span class="el">…&nbsp;&nbsp;extension: server_name = tenant1.db.example.com</span>
+        </div>
+        <p class="note">第一個 byte <em class="t">0x16</em> = TLS handshake record → nginx 解析 extension，<em class="t">$ssl_preread_server_name</em> 有值。</p>
+      </div>
+    </div>
+    <div class="byterow">
+      <div class="who">PostgreSQL SSLRequest<small>libpq 預設首包</small></div>
+      <div>
+        <div class="oct">
+          <span class="bad">00</span><span>00</span><span>00</span><span>08</span>
+          <span>04</span><span>D2</span><span>16</span><span>2F</span>
+        </div>
+        <p class="note">length = 8、request code = 80877103 (<em class="t">0x04D2162F</em>)。首 byte 是 <em class="t">0x00</em>，不符 TLS record 格式 →
+        <em class="t">$ssl_preread_server_name</em> 為<strong>空字串</strong>，<em class="t">map</em> 一律命中 default。注意第 7 個 byte 剛好也是 <em class="t">0x16</em>，但位置不對，不會被誤判。</p>
+      </div>
+    </div>
+    <figcaption><b>圖 1 — 分流失敗的根因。</b> nginx stream 沒有實作 PostgreSQL 協定，無法「代答」SSLRequest。
+    同樣的限制也適用於 TLS termination：nginx 直接對首包做 TLS 握手也會失敗，因為 client 還在等那一個 byte 的回覆。</figcaption>
+  </figure>
+
+  <p>要讓 SNI 可用，只有兩條路：<strong>(a) 讓 client 第一個封包就送 ClientHello</strong>（PostgreSQL 17 的
+  <em class="t">sslnegotiation=direct</em>，搭配 ALPN <em class="t">postgresql</em>），或 <strong>(b) 在邊界換上一個懂 PostgreSQL 協定的代理</strong>，
+  由它代答 SSLRequest 之後再讀 SNI。§3 把這兩條路寫成完整方案。</p>
+  <p>要強調的是：這個限制<strong>與 TLS 在哪裡終止無關</strong>。就算讓 nginx 自己終止（<em class="t">listen ... ssl</em>），
+  它一樣是直接對首包做 TLS 握手，遇到 SSLRequest 照樣失敗。
+  真正的分界線是<strong>代理有沒有實作 PostgreSQL 的 SSLRequest 交涉</strong>：nginx 沒有，Traefik 有。</p>
+</section>
+
+<section id="s2">
+  <h2><span class="num">§2</span> 修正後的資料路徑</h2>
+  <p class="sub">左半段兩個方案完全共用；差異只在 cluster B 邊界那一跳，以及 TLS 在哪裡終止。</p>
+
+  <figure class="bleed">
+    <svg viewBox="0 0 980 400" role="img" aria-label="Cluster A 內有 client 與一台 L4 轉送的 nginx；連線跨叢集進到 Cluster B 邊界後分為兩個方案：方案 A 用 NGINX IC TLS passthrough 直通到 PgBouncer 終止 TLS；方案 B 用懂 Postgres STARTTLS 的代理在邊界終止 TLS 再以內部連線送到 PgBouncer">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/>
+        </marker>
+      </defs>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">
+
+        <!-- cluster containers（先畫，才不會蓋住節點） -->
+        <rect x="6" y="144" width="356" height="112" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="16" y="162" font-size="10" letter-spacing="1.4" fill="var(--ink-3)">CLUSTER A — 應用服務</text>
+        <rect x="444" y="26" width="530" height="352" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="454" y="44" font-size="10" letter-spacing="1.4" fill="var(--ink-3)">CLUSTER B — CNPG 叢集</text>
+
+        <!-- shared segment -->
+        <rect x="14" y="172" width="126" height="58" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="77" y="196" text-anchor="middle" font-size="13" font-weight="600">Client</text>
+        <text x="77" y="213" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">公司內部服務</text>
+
+        <line x1="140" y1="201" x2="196" y2="201" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+        <text x="168" y="190" text-anchor="middle" font-size="10">:5432</text>
+
+        <rect x="200" y="172" width="152" height="58" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="276" y="193" text-anchor="middle" font-size="13" font-weight="600">nginx stream</text>
+        <text x="276" y="209" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">純 L4 轉送 · 零租戶設定</text>
+        <text x="276" y="222" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">proxy_pass ingress-b:443</text>
+        <text x="406" y="140" text-anchor="middle" font-size="10" fill="var(--ink-3)">跨叢集</text>
+
+        <!-- dns note -->
+        <text x="77" y="136" text-anchor="middle" font-size="10" fill="var(--ink-3)">*.db.example.com</text>
+        <text x="77" y="123" text-anchor="middle" font-size="10" fill="var(--ink-3)">wildcard A record</text>
+
+        <!-- fork -->
+        <path d="M352 201 L385 201 L385 92 L456 92" fill="none" stroke="var(--wire)" stroke-width="1.4" marker-end="url(#ahw)"/>
+        <path d="M352 201 L385 201 L385 310 L456 310" fill="none" stroke="var(--wire)" stroke-width="1.4" marker-end="url(#ahw)"/>
+
+        <!-- branch A -->
+        <text x="20" y="52" font-size="11" font-weight="600" fill="var(--wire)">方案 A · SNI 直通</text>
+        <text x="20" y="68" font-size="10" fill="var(--ink-3)">client 需 libpq ≥ 17</text>
+        <rect x="460" y="58" width="196" height="68" rx="2" fill="none" stroke="var(--wire)" stroke-width="1.4"/>
+        <text x="558" y="80" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--wire)">NGINX IC</text>
+        <text x="558" y="96" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">TransportServer</text>
+        <text x="558" y="110" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">tls-passthrough + host</text>
+        <line x1="656" y1="92" x2="734" y2="92" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+        <text x="695" y="82" text-anchor="middle" font-size="10">TLS 直通</text>
+        <rect x="738" y="58" width="228" height="68" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="852" y="80" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer Pod</text>
+        <text x="852" y="96" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">在此終止 TLS</text>
+        <text x="852" y="110" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">需 pgbouncer ≥ 1.25</text>
+        <text x="558" y="145" text-anchor="middle" font-size="10" fill="var(--ink-3)">首包即 ClientHello → SNI 可讀</text>
+
+        <!-- branch B -->
+        <text x="20" y="290" font-size="11" font-weight="600" fill="var(--wire)">方案 B · 協定感知代理</text>
+        <text x="20" y="306" font-size="10" fill="var(--ink-3)">client 版本不限</text>
+        <rect x="460" y="276" width="196" height="68" rx="2" fill="none" stroke="var(--wire)" stroke-width="1.4"/>
+        <text x="558" y="298" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--wire)">Traefik TCP</text>
+        <text x="558" y="314" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">HostSNI(...) 路由</text>
+        <text x="558" y="328" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">在此終止 TLS</text>
+        <line x1="656" y1="310" x2="734" y2="310" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)"/>
+        <text x="695" y="300" text-anchor="middle" font-size="10">內網 TCP</text>
+        <rect x="738" y="276" width="228" height="68" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="852" y="298" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer Pod</text>
+        <text x="852" y="314" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">client_tls_sslmode</text>
+        <text x="852" y="328" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">= prefer / require</text>
+        <text x="558" y="363" text-anchor="middle" font-size="10" fill="var(--ink-3)">代理代答 SSLRequest 後才讀 SNI</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 2 — 兩個方案差在哪。</b> <strong>Cluster A 的內容在兩個方案裡完全相同</strong>——nginx 是「笨的」L4 轉送：不解析、不分流、不需要 per-tenant 設定，
+    因此新增 pooler 時 <b>cluster A 完全不用動</b>。所有租戶感知都收斂到 cluster B 邊界的一份 CR。
+    方案 A 的 TLS 從 client 一路加密到 pgbouncer；方案 B 在邊界解開，代價是 pod-to-pod 那一段要靠叢集內部保護。</figcaption>
+  </figure>
+</section>
+
+<section id="s3">
+  <h2><span class="num">§3</span> 兩個方案與取捨</h2>
+  <p class="sub">選哪一個，取決於「你能不能規定 client 的 libpq 版本」。</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th>方案</th><th>分流依據</th><th>Client 相容性</th><th>新增一個 pooler 的成本</th><th>主要風險</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="opt">A<small>direct TLS 直通</small></td>
+        <td>SNI（TLS passthrough）</td>
+        <td><span class="pill a">libpq ≥ 17</span><br>需 <em class="t">sslnegotiation=direct</em></td>
+        <td>一份 TransportServer CR</td>
+        <td>舊 client / 舊 driver（node-postgres、部分 ORM）完全連不上；wildcard 憑證必須灌進 Cluster</td>
+      </tr>
+      <tr class="rec">
+        <td class="opt">B<small>協定感知代理</small></td>
+        <td>SNI（代理代答 STARTTLS）</td>
+        <td><span class="pill g">全部</span><br>一般 <em class="t">sslmode=require</em></td>
+        <td>一份 IngressRouteTCP CR</td>
+        <td>要在 cluster B 多維運一個 Traefik（或自寫 proxy）</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="call go">
+    <span class="lbl">建議</span>
+    <p><strong>以 B 為主線。</strong> client 幾乎都是公司自家服務，「舊 driver 連不上」的風險比一般情況低，
+    <em class="t">sslnegotiation=direct</em> 在 libpq 17+、pgx v5、node-postgres 上都可用——所以 <strong>A 是站得住腳的選項</strong>。
+    但真正的差別在成本怎麼成長：A 的憑證管理與 reload 影響範圍會隨 pooler 數量線性上升，
+    而 pooler 數量正是會一直增加的東西；B 的成本是一次性的。</p>
+    <p>選 A 的前提是把實際用到的 driver 與版本盤得完（含 BI 工具、GUI client 這些不會 rebuild 的），
+    並接受 wildcard 私鑰會掛進資料庫 namespace 的每一個 pod。詳細取捨見另一份〈跨叢集邊界方案選型〉。
+    兩者其實可以並存：Traefik 的 TCP router 同時支援 passthrough 與 termination，同一個 hostname 兩種 client 都能進。</p>
+  </div>
+
+</section>
+
+<section id="s4">
+  <h2><span class="num">§4</span> Cluster A：local nginx</h2>
+  <p class="sub">關鍵設計：讓它盡可能笨，新增 pooler 時不要碰它。</p>
+
+  <p>需要編進 <em class="t">--with-stream</em>（官方 <em class="t">nginx</em> image 已內建）。因為所有租戶都指到同一個 cluster B 入口，
+  <strong>cluster A 不需要任何 SNI 判斷</strong>——它只是把 TCP bytes 原封不動轉過去，SNI 由 cluster B 解析。</p>
+
+  <div class="code">
+    <div class="hdr"><span>/etc/nginx/nginx.conf</span><b>cluster A</b></div>
+<pre><span class="c"># stream 區塊與 http 同層，不是放在 http 裡面</span>
+stream {
+    log_format pg '$remote_addr [$time_local] $status '
+                  '$bytes_sent/$bytes_received $session_time';
+    access_log /var/log/nginx/pg.log pg;
+
+    upstream cluster_b_edge {
+        <span class="c"># 列出所有 ingress 節點 / LB VIP；不要靠 DNS round-robin 當 HA</span>
+        server 10.20.0.11:5432 max_fails=3 fail_timeout=10s;
+        server 10.20.0.12:5432 max_fails=3 fail_timeout=10s;
+    }
+
+    server {
+        listen 5432;
+        proxy_pass cluster_b_edge;
+
+        proxy_connect_timeout   5s;
+        <span class="w">proxy_timeout           1h;</span>   <span class="c"># 預設只有 10m，會砍掉閒置的 DB 連線</span>
+        <span class="w">proxy_socket_keepalive  on;</span>   <span class="c"># 對 upstream 開 TCP keepalive</span>
+
+        <span class="c"># 不要開 proxy_protocol —— pgbouncer 不支援，會被當成垃圾封包</span>
+    }
+}</pre>
+  </div>
+
+  <p>如果你之後想在 cluster A 就依 hostname 分流到<strong>不同的</strong> cluster B（多後端叢集），才需要 <em class="t">ssl_preread</em>——
+  但那同樣受 §1 限制，只有在方案 A（direct TLS）下才會有值：</p>
+
+  <div class="code">
+    <div class="hdr"><span>選用：多後端叢集時的 SNI 分流</span><b>僅方案 A 有效</b></div>
+<pre>map $ssl_preread_server_name $pg_backend {
+    ~^[a-z0-9-]+\.us\.db\.example\.com$   cluster_b_us;
+    ~^[a-z0-9-]+\.eu\.db\.example\.com$   cluster_b_eu;
+    default                               "";        <span class="c"># 空值 → 連線失敗，等同拒絕</span>
+}
+
+server {
+    listen 5432;
+    <span class="k">ssl_preread on;</span>
+    proxy_pass $pg_backend;
+    proxy_timeout 1h;
+}</pre>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="num">§5</span> Cluster B：邊界設定</h2>
+  <p class="sub">兩個方案各給一份可以直接套的 CR。</p>
+
+  <h3 class="h">方案 A — NGINX Ingress Controller TransportServer</h3>
+  <p>先在 controller 加上 <em class="t">-enable-tls-passthrough</em>。啟用後 passthrough listener 預設接管 <strong>443</strong>；
+  若 443 上已有大量 HTTPS Ingress，建議用 <em class="t">-tls-passthrough-port=5432</em> 拉一個獨立 port，兩邊互不影響
+  （記得 controller Service 也要開這個 port）。</p>
+
+  <div class="code">
+    <div class="hdr"><span>transportserver.yaml</span><b>每個 pooler 一份</b></div>
+<pre>apiVersion: k8s.nginx.org/v1
+kind: TransportServer
+metadata:
+  name: tenant1-pg
+  namespace: tenant1
+spec:
+  listener:
+    name: tls-passthrough          <span class="c"># 內建 listener，不需在 GlobalConfiguration 宣告</span>
+    protocol: TLS_PASSTHROUGH
+  <span class="k">host: tenant1.db.example.com</span>   <span class="c"># SNI 比對值；(listener, host) 必須全域唯一</span>
+  upstream:
+    name: tenant1-pooler
+    service: tenant1-pooler        <span class="c"># CNPG 建立的 Service 與 Pooler 同名</span>
+    port: 5432
+    maxFails: 2
+    failTimeout: 10s
+  upstreamParameters:
+    connectTimeout: 5s
+    nextUpstreamTimeout: 10s
+  sessionParameters:
+    <span class="w">timeout: 60m</span>                 <span class="c"># 預設 10m —— 一定要調大</span>
+  action:
+    pass: tenant1-pooler</pre>
+  </div>
+
+  <div class="call">
+    <span class="lbl">為什麼一定要 direct TLS</span>
+    <p><strong>「TLS 在哪裡終止」和「TLS 用什麼方式開場」是兩件事，這個限制屬於後者。</strong>
+    就算改成讓 nginx 自己終止（<em class="t">listen ... ssl</em>），它的語意也是「首批 bytes 就是 TLS record」，收到就交給 OpenSSL；
+    而一般 libpq 送來的是 <em class="t">00 00 00 08 04 D2 16 2F</em>，首 byte 不是 <em class="t">0x16</em>，握手當場失敗，
+    client 端看到的是 <em>server closed the connection unexpectedly</em>。
+    此時 client 還在等那一個 byte 的 <em class="t">S</em>，而 nginx 沒有回它的程式碼——<strong>不論終止或直通，nginx 只會說一種開場方式</strong>。</p>
+    <p>另外，libpq 的 direct 模式會強制檢查 server 有沒有選 ALPN <em class="t">postgresql</em>（防 ALPN confusion），
+    沒選就自己中斷。TLS passthrough 下這由 pgbouncer 負責，不用你操心；但若你自己架 nginx 終止 TLS，記得補上 <em class="t">ssl_alpn postgresql;</em>。</p>
+  </div>
+
+
+  <h3 class="h">方案 B — Traefik IngressRouteTCP</h3>
+  <p>Traefik 會讀首包、辨識出 PostgreSQL 的 STARTTLS 交涉、回覆 <em class="t">S</em>，然後才做 TLS 握手取得 SNI。
+  這正是 nginx 缺的那一塊。</p>
+
+  <div class="code">
+    <div class="hdr"><span>traefik values.yaml（靜態設定）</span><b>一次性</b></div>
+<pre>ports:
+  postgres:
+    port: 5432
+    exposedPort: 5432
+    protocol: TCP
+    expose:
+      default: true</pre>
+  </div>
+
+  <div class="code">
+    <div class="hdr"><span>ingressroutetcp.yaml</span><b>每個 pooler 一份</b></div>
+<pre>apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: tenant1-pg
+  namespace: tenant1
+spec:
+  entryPoints: [postgres]
+  routes:
+    - match: <span class="k">HostSNI(`tenant1.db.example.com`)</span>
+      services:
+        - name: tenant1-pooler
+          port: 5432
+  tls:
+    secretName: db-wildcard-tls    <span class="c"># *.db.example.com，在邊界終止</span>
+    <span class="c"># passthrough: true  ← 若改成直通，client 端請用 sslmode=require</span>
+    <span class="c">#   （passthrough 下 verify-full 的語意會跟著憑證來源改變）</span></pre>
+  </div>
+
+  <div class="call">
+    <span class="lbl">自建替代方案</span>
+    <p>若不想引入 Traefik，這個代理其實只有一百多行 Go：讀 8 bytes、比對 <em class="t">0x04D2162F</em>、回一個 <em class="t">'S'</em>、
+    用 <em class="t">tls.Server</em> 拿 <em class="t">ClientHelloInfo.ServerName</em>、查表撥到後端、再對後端重做一次 SSLRequest 交涉、雙向 <em class="t">io.Copy</em>。
+    好處是路由表可以直接 watch Pooler CR，完全不用產生 ingress CR。</p>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="num">§6</span> Pooler / PgBouncer YAML 要改什麼</h2>
+  <p class="sub">比你想像的少。連線池參數沿用，重點在 TLS 模式與 keepalive。</p>
+
+  <div class="code">
+    <div class="hdr"><span>pooler.yaml</span><b>CNPG</b></div>
+<pre>apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: tenant1-pooler              <span class="c"># Service 會用同一個名字</span>
+  namespace: tenant1
+spec:
+  cluster:
+    name: tenant1-db
+  instances: 3                      <span class="c"># 邊界會做 L4 負載平衡，多開幾個</span>
+  type: rw
+  pgbouncer:
+    poolMode: transaction           <span class="c"># 注意：prepared statement / advisory lock 的相容性</span>
+    parameters:
+      <span class="k">client_tls_sslmode: "require"</span>       <span class="c"># 方案 A 必填；方案 B 視內網政策</span>
+      max_client_conn: "1000"
+      default_pool_size: "25"
+      min_pool_size: "5"
+      max_db_connections: "80"
+      ignore_startup_parameters: "extra_float_digits,options"  <span class="c"># CNPG 要求保留這兩個</span>
+
+      <span class="c"># --- 跨叢集才需要的：讓死掉的 TCP session 被回收 ---</span>
+      <span class="w">tcp_keepalive: "1"</span>
+      <span class="w">tcp_keepidle: "30"</span>
+      <span class="w">tcp_keepintvl: "10"</span>
+      <span class="w">tcp_keepcnt: "3"</span>
+      client_idle_timeout: "0"             <span class="c"># 交給 nginx/LB 管，避免兩邊互踢</span>
+      server_idle_timeout: "600"
+      server_lifetime: "3600"
+      query_wait_timeout: "120"
+
+      <span class="c"># --- 觀測性：因為 client IP 會被代理蓋掉（見 §8） ---</span>
+      application_name_add_host: "1"
+      log_connections: "1"
+      log_disconnections: "1"
+  serviceTemplate:
+    spec:
+      type: ClusterIP              <span class="c"># 不需要 NodePort / LoadBalancer</span></pre>
+  </div>
+
+  <div class="call">
+    <span class="lbl">三個必須知道的限制</span>
+    <p><strong>1.</strong> <em class="t">[databases]</em>、<em class="t">[users]</em>、以及所有 <em class="t">server_tls_*</em> / <em class="t">client_tls_cert_file</em> 都由 operator 接管，寫了會被忽略或被 webhook 擋下。
+    可設定的 parameter 是一份白名單，請以你這版 CNPG 的 <em>Connection pooling</em> 文件為準。</p>
+    <p><strong>2.</strong> Pooler 目前<strong>不能</strong>指定自己的憑證（CNPG issue #8672），它一律沿用 Cluster 的 server 憑證——這正好是 §7 的操作點。</p>
+    <p><strong>3.</strong> 方案 A 的 direct TLS 需要 <strong>pgbouncer ≥ 1.25</strong>（client 端 direct TLS 支援）。CNPG 1.26 / 1.27 起新建的 Pooler 預設就是 1.25.1；舊叢集請確認 image tag。</p>
+  </div>
+
+  <h3 class="h">連線數的算術</h3>
+  <p>跨叢集之後 client 數量會失控成長，這兩條不等式要先算過：</p>
+  <ul>
+    <li><em class="t">instances × max_client_conn</em> = 邊界代理要維持的最大並發 TCP session。3 × 1000 = 3000，nginx 沒問題，但雲端 LB 的每後端連線上限要確認。</li>
+    <li><em class="t">instances × default_pool_size × (資料庫, 使用者) 組合數</em> 必須 &lt; PostgreSQL 的 <em class="t">max_connections</em> 減掉 <em class="t">superuser_reserved_connections</em> 與 CNPG 自己的連線。用 <em class="t">max_db_connections</em> 設一個硬上限比較保險。</li>
+  </ul>
+</section>
+
+<section id="s7">
+  <h2><span class="num">§7</span> 憑證與 DNS</h2>
+  <p class="sub">client 用 verify-full 時，憑證必須認得外部網域，而不是 k8s service 名稱。</p>
+
+  <p>CNPG 預設用自簽 CA 簽發 server 憑證，SAN 是 <em class="t">tenant1-db-rw.tenant1.svc</em> 這類內部名稱。
+  外部 client 連 <em class="t">tenant1.db.example.com</em> 時，<em class="t">verify-full</em> 一定會失敗。兩種解法：</p>
+
+  <ul>
+    <li><strong>方案 B（邊界終止）：</strong>把 wildcard 憑證放在邊界的 Secret，<strong>Cluster / Pooler 完全不用動</strong>。
+    用公開 CA 簽的話，client 端只要寫 <em class="t">sslmode=verify-full</em>，連 <em class="t">sslrootcert</em> 都不用給——做對的事反而最省事。</li>
+    <li><strong>方案 A（直通）</strong>則必須動 Cluster：pgbouncer 直接對外出示憑證，wildcard 憑證必須灌進去：</li>
+  </ul>
+
+  <div class="code">
+    <div class="hdr"><span>cluster.yaml</span><b>僅方案 A 需要</b></div>
+<pre>apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tenant1-db
+spec:
+  certificates:
+    <span class="k">serverTLSSecret: db-wildcard-tls</span>   <span class="c"># *.db.example.com 的 tls.crt / tls.key</span>
+    <span class="k">serverCASecret:  db-wildcard-ca</span>    <span class="c"># ca.crt</span></pre>
+  </div>
+
+  <p>用 cert-manager 簽一張 <em class="t">*.db.example.com</em> 即可。
+  <strong>所有 CNPG Cluster 在同一個 namespace 的話，Secret 就只有一份</strong>，每個 Cluster 的
+  <em class="t">serverTLSSecret</em> 填同一個名字，輪替時原地續、一起生效——新增租戶時憑證這一環是零成本的。
+  （若改成一租戶一 namespace，才需要 reflector / kyverno 把 Secret 同步過去。）
+  CNPG 的 operator 與 instance 之間只驗 CA、不驗 DNS name，所以換成外部憑證不會打斷內部通訊。</p>
+
+  <div class="call">
+    <span class="lbl">兩件要先確認的事</span>
+    <p><strong>1. 輪替時 pooler 會不會自動載入新憑證。</strong>CNPG 對自簽憑證有處理輪替，但使用者提供的 Secret 更新後
+    pgbouncer 是否重載請先實測——不然問題會在 90 天後才出現。必要時在續期流程後加一次 pooler rollout。</p>
+    <p><strong>2. wildcard 只涵蓋一層 label。</strong><em class="t">*.db.example.com</em> 能對上
+    <em class="t">tenant1.db.example.com</em>，但對不上 <em class="t">pooler.tenant1.db.example.com</em>。
+    hostname 命名規則要先定死。</p>
+  </div>
+
+  <p><strong>DNS：</strong>一筆 <em class="t">*.db.example.com A → cluster A nginx 的 VIP</em> 就夠了。
+  新增 pooler 不需要新增 DNS 記錄，這是這個設計相對 nodePort 最大的維運收益。</p>
+</section>
+
+<section id="s8">
+  <h2><span class="num">§8</span> 會咬人的地方</h2>
+  <p class="sub">這些不會在 PoC 出現，但會在上線兩週後出現。</p>
+
+  <ol class="check">
+    <li><div><b>Client IP 全部變成代理的 IP</b><span>丟掉的是<strong>網路來源</strong>，不是<strong>身分</strong>：SCRAM / 憑證認證照常運作，<em class="t">usename</em> 準確。但 <em class="t">pg_hba</em> 的 IP 規則與來源 IP 稽核會失效。注意這不是跨叢集造成的——只要走 PgBouncer，PostgreSQL 本來就看不到 client IP；跨叢集多丟的是 PgBouncer 自己 log 裡的那一層（現在看到的是 ingress pod IP）。追來源請靠：每個租戶一個 DB role、要求 client 帶 <em class="t">application_name</em>、以及用 cluster A nginx 的 <em class="t">$remote_addr</em> + SNI hostname + 時間戳做關聯。<em class="t">application_name_add_host</em> 填的是 pgbouncer 看到的 client（= ingress pod），對追真實來源沒有幫助。PgBouncer 不支援 PROXY protocol，所以也無法把真實 IP 轉發進去。</span></div></li>
+    <li><div><b>三層 idle timeout 會互相打架</b><span>cluster A nginx <em class="t">proxy_timeout</em>（預設 10m）、cluster B <em class="t">sessionParameters.timeout</em>（預設 10m）、以及雲端 LB 的 idle timeout（AWS NLB / GCP 常見 350s–600s）。三者都要 &gt; 你的應用最長閒置時間，並且 client 端連線字串加上 <em class="t">keepalives=1 keepalives_idle=30 keepalives_interval=10</em>，否則會出現典型的「連線看起來還在，一下 query 就 hang 住」。</span></div></li>
+    <li><div><b>每新增一個 pooler 就會 reload nginx</b><span>新增 TransportServer <strong>確實就是你要做的全部</strong>，reload 是資料面的副作用而非額外工作。開源 NGINX 沒有動態設定 API，controller 是「重產整份 nginx.conf → <em class="t">nginx -s reload</em>」。舊 worker 會繼續服務既有連線，但不會無限等：<em class="t">worker_shutdown_timeout</em> 到期就強制關閉（ingress-nginx 預設 <strong>240s</strong>）。真正的問題是 blast radius——改 tenant50 的 CR，掐斷的是 tenant1–49 正在跑的交易。請把 <em class="t">worker-shutdown-timeout</em> 調到遠大於最長交易時間、批次套用 CR 不要一個一個發、並確認應用端有重連與 retry。Traefik 是 in-process 更新路由表，既有 TCP 連線不受影響，這是選 B 的另一個實質理由。</span></div></li>
+    <li><div><b>pool_mode 的語意陷阱</b><span><em class="t">transaction</em> 模式下 <em class="t">SET</em>、advisory lock、部分 prepared statement 行為會變。跨叢集後你面對的是「一直有新 client 出現」，這些 client 不一定知道自己連的是 pooler。建議在使用文件裡直接寫明 pool mode，並考慮同時提供一個 <em class="t">session</em> 模式的 pooler hostname 給有需要的人。</span></div></li>
+    <li><div><b>健康檢查只到 TCP 層</b><span>nginx 的 <em class="t">max_fails</em> 只看 TCP 連得上與否。PgBouncer 活著但後端 PostgreSQL 掛掉時，連線仍會被送進去然後失敗。要真的做應用層探測，需要 NGINX Plus 的 <em class="t">healthCheck</em> 或在 pooler pod 上放一個能跑 <em class="t">SELECT 1</em> 的 readiness probe。</span></div></li>
+    <li><div><b>租戶名稱與 hostname 的對應要有唯一性約束</b><span><em class="t">(listener, host)</em> 在 NGINX IC 必須全域唯一，衝突時其中一個 CR 會被<strong>靜默拒絕</strong>。多對多場景下建議由一個 controller 或 Argo template 從 Pooler 名稱推導 hostname，不要讓人手寫。</span></div></li>
+  </ol>
+</section>
+
+<section id="s9">
+  <h2><span class="num">§9</span> 驗證步驟</h2>
+  <p class="sub">照順序做，每一步都能把問題定位到某一跳。</p>
+
+  <div class="code">
+    <div class="hdr"><span>由外而內逐跳驗證</span><b>bash</b></div>
+<pre><span class="c"># 1. DNS 與 L4 通不通（不涉及 PG 協定）</span>
+getent hosts tenant1.db.example.com
+nc -vz tenant1.db.example.com 5432
+
+<span class="c"># 2. 邊界認不認得 SNI —— 方案 A 用這個確認 ClientHello 有被讀到</span>
+openssl s_client -connect tenant1.db.example.com:5432 \
+    -servername tenant1.db.example.com -alpn postgresql &lt;/dev/null 2&gt;&amp;1 \
+  | grep -E 'subject=|ALPN|Verify return'
+
+<span class="c"># 3. 一般 client（方案 B 的主要路徑）</span>
+psql "host=tenant1.db.example.com port=5432 dbname=app user=app \
+      sslmode=verify-full sslrootcert=/etc/ssl/certs/ca.crt"
+
+<span class="c"># 4. direct TLS client（方案 A，需要 psql 17+）</span>
+psql "host=tenant1.db.example.com port=5432 dbname=app user=app \
+      sslmode=verify-full <span class="k">sslnegotiation=direct</span> sslrootcert=/etc/ssl/certs/ca.crt"
+
+<span class="c"># 5. 確認真的走到正確的 pooler、而且中間確實經過 pgbouncer</span>
+psql "..." -c "select current_database(), inet_server_addr(), pg_backend_pid();"
+psql "..." -c "select application_name, client_addr from pg_stat_activity
+               where pid = pg_backend_pid();"
+<span class="c">#   application_name 會帶上 pgbouncer 加的 host 資訊；</span>
+<span class="c">#   client_addr 會是 pooler pod 的 IP，不是你的 IP —— 這是預期行為（見 §8）</span>
+
+<span class="c"># 6. 長連線存活測試：開著連線放 20 分鐘再下一個 query</span>
+psql "... keepalives=1 keepalives_idle=30 keepalives_interval=10" \
+     -c "select pg_sleep(1200); select now();"</pre>
+  </div>
+
+  <p>第 2 步若 <em class="t">openssl</em> 拿不到憑證但第 3 步的 <em class="t">psql</em> 可以，就確定你落在方案 B 的路徑上（代理有代答 STARTTLS）。
+  反之若第 4 步能連、第 3 步不能，就是純 passthrough 的方案 A，這時要回頭確認舊 client 的相容性。</p>
+</section>
+
+</main>
+
+<footer>
+  <h4>參考來源</h4>
+  <p>
+  <a href="https://nginx.org/en/docs/stream/ngx_stream_ssl_preread_module.html">ngx_stream_ssl_preread_module</a> ·
+  <a href="https://mailman.nginx.org/pipermail/nginx/2023-May/O3DYBFH7LI32J2EQXFOI4HJM5R5WAXK5.html">nginx mailing list：ssl preread for postgres connection</a> ·
+  <a href="https://github.com/traefik/traefik/pull/9377">Traefik PR #9377：Support SNI routing with Postgres STARTTLS</a> ·
+  <a href="https://doc.traefik.io/traefik/reference/routing-configuration/tcp/tls/">Traefik TCP TLS 文件</a> ·
+  <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/transportserver-resource/">NGINX IC TransportServer resource</a> ·
+  <a href="https://github.com/pgbouncer/pgbouncer/pull/1359">pgbouncer PR #1359：client-side direct TLS</a> ·
+  <a href="https://cloudnative-pg.io/docs/1.26/connection_pooling">CloudNativePG — Connection pooling</a> ·
+  <a href="https://nginx.org/en/docs/stream/ngx_stream_ssl_module.html">ngx_stream_ssl_module（<em class="t">$ssl_server_name</em>、<em class="t">ssl_alpn</em>）</a> ·
+  <a href="https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/">ingress-nginx ConfigMap：worker-shutdown-timeout</a> ·
+  <a href="https://cloudnative-pg.io/documentation/1.27/certificates/">CloudNativePG — Certificates</a> ·
+  <a href="https://github.com/cloudnative-pg/cloudnative-pg/issues/8672">CNPG issue #8672：Pooler TLS 憑證客製化</a>
+  </p>
+  <p>版本相依：direct TLS 需 PostgreSQL 17+ 的 libpq 與 pgbouncer 1.25+（CNPG 1.26/1.27 起預設 1.25.1）。
+  可設定的 PgBouncer parameter 白名單依 CNPG 版本而異，套用前請對照你這版的文件。</p>
+</footer>
+
+</div>
+</body>
+</html>
