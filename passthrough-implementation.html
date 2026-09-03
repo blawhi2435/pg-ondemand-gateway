@@ -604,6 +604,73 @@ footer a{color:var(--ink-2)}
   之後才進行 TLS 握手並取得 SNI。因此 client 端不需要 direct TLS，TLS 在邊界終止，
   邊界到 Pooler 之間改為明文連線。</p>
 
+  <figure>
+    <svg viewBox="0 0 960 300" role="img" aria-label="改用 Traefik 後的資料路徑。Cluster A 內容與圖 1 相同：client 與一台純 L4 轉送的 nginx stream。Cluster B 的邊界改為 Traefik TCP router，它代答 PostgreSQL 的 SSLRequest、讀取 SNI 後終止 TLS，邊界到 PgBouncer 之間為明文連線。Traefik 看得到 TLS 層資訊並持有 wildcard 私鑰。">
+      <defs>
+        <marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <path d="M87 70 L87 60 L517 60 L517 70" fill="none" style="stroke:var(--accent)" stroke-width="1.3"/>
+        <rect x="216" y="51" width="172" height="18" style="fill:var(--surface)"/>
+        <text x="302" y="64" text-anchor="middle" font-size="10.5" style="fill:var(--accent)">TLS — 到邊界為止</text>
+        <path d="M517 70 L517 60 L801 60 L801 70" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="4 3" opacity=".7"/>
+        <rect x="613" y="51" width="92" height="18" style="fill:var(--surface)"/>
+        <text x="659" y="64" text-anchor="middle" font-size="10.5" style="fill:var(--ink-3)">明文 TCP</text>
+
+        <rect x="10" y="84" width="352" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="24" y="102" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER A</text>
+        <rect x="394" y="84" width="556" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="408" y="102" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B</text>
+
+        <rect x="28" y="116" width="118" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="87" y="138" text-anchor="middle" font-size="12.5" font-weight="600">Client</text>
+        <text x="87" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">版本不限</text>
+
+        <line x1="146" y1="144" x2="178" y2="144" stroke="currentColor" stroke-width="1.2" marker-end="url(#ta)"/>
+
+        <rect x="182" y="116" width="164" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="264" y="138" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
+        <text x="264" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
+
+        <line x1="346" y1="144" x2="404" y2="144" stroke="currentColor" stroke-width="1.2" marker-end="url(#ta)"/>
+
+        <rect x="410" y="116" width="214" height="56" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.6"/>
+        <text x="517" y="138" text-anchor="middle" font-size="12.5" font-weight="600" style="fill:var(--accent)">Traefik TCP</text>
+        <text x="517" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">HostSNI(...) · 終止 TLS</text>
+
+        <line x1="624" y1="144" x2="662" y2="144" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ta)"/>
+
+        <rect x="668" y="116" width="266" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="801" y="138" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer</text>
+        <text x="801" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">不參與 TLS 交涉</text>
+
+        <text x="87" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包為 SSLRequest</text>
+        <text x="378" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+        <text x="517" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">代答 S → 讀 SNI → 解密</text>
+        <text x="801" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">PgBouncer 版本不限</text>
+
+        <line x1="517" y1="206" x2="517" y2="228" stroke="currentColor" stroke-width="1" opacity=".45"/>
+        <line x1="801" y1="206" x2="801" y2="228" stroke="currentColor" stroke-width="1" opacity=".45"/>
+
+        <rect x="410" y="228" width="214" height="58" rx="2" fill="none" style="stroke:var(--good)" stroke-width="1.1"/>
+        <text x="424" y="248" font-size="9" style="fill:var(--good)">看得到：SNI、TLS 錯誤、憑證</text>
+        <text x="424" y="266" font-size="9" style="fill:var(--good)">wildcard 私鑰改掛在這裡</text>
+
+        <rect x="668" y="228" width="266" height="58" rx="2" fill="none" style="stroke:var(--stop)" stroke-width="1.1"/>
+        <text x="682" y="248" font-size="9" style="fill:var(--stop)">邊界到此段為明文</text>
+        <text x="682" y="266" font-size="9" style="fill:var(--stop)">需 NetworkPolicy 或 mesh 保護</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 2 — 與圖 1 的差異。</b> Cluster A 的內容完全相同，PgBouncer 也不需要變更設定以外的調整；
+    改變的只有邊界那一個框，以及<strong>加密的涵蓋範圍</strong>——TLS 在 Traefik 就結束，之後那一段是明文。
+    綠框是換來的（邊界看得見 TLS 層資訊），紅框是付出的（多一段未加密路徑）；
+    私鑰則是從 CNPG namespace 移到 ingress 側，不是消失。</figcaption>
+  </figure>
+
   <p class="grp s0">不再需要處理<span>共 9 項</span></p>
   <ol class="issues compact s0">
     <li><div class="id">P1</div><div class="txt"><b>PgBouncer 版本</b>——握手與 ALPN 由 Traefik 負責，PgBouncer 不再參與 TLS 交涉，1.25 的版本要求消失。</div></li>
