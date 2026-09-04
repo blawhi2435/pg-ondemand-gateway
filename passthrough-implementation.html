@@ -151,6 +151,13 @@ tr.ok{background:var(--accent-soft)}
 .code pre .k{color:var(--accent);font-weight:500}
 .code pre .w{color:var(--warn);font-weight:500}
 
+/* note */
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);
+  padding:13px 16px;margin:20px 0;font-size:14px;line-height:1.62;max-width:var(--col)}
+.note .l{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:4px;color:var(--warn)}
+.note p:last-child{margin-bottom:0}
+
 /* issue list */
 .grp{
   font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;
@@ -202,7 +209,7 @@ footer a{color:var(--ink-2)}
   <p class="kicker">實作文件 · 方案 A</p>
   <h1>Pooler TLS 直通架構</h1>
   <p class="dek">Cluster A 的服務經由 wildcard 網域連到 Cluster B 的 CNPG Pooler，
-  TLS 在 Cluster B 邊界不終止，由 PgBouncer 完成握手。本文說明架構、TLS 不在邊界終止的原因，以及需要處理的問題；設定檔見另一份〈TLS 直通設定清單〉。文末列出改用 Traefik 時這些問題的變化。</p>
+  TLS 在 Cluster B 邊界不終止，由 PgBouncer 完成握手。本文說明架構、TLS 不在邊界終止的原因，以及需要處理的問題；設定檔見另一份〈TLS 直通設定清單〉。文末列出改用 Traefik 或 APISIX 時這些問題的變化。</p>
   <div class="meta">
     <span><b>元件</b> nginx stream · NGINX IC TransportServer · CNPG Pooler</span>
     <span><b>日期</b> 2026-09-03</span>
@@ -757,6 +764,141 @@ footer a{color:var(--ink-2)}
       </div>
     </li>
   </ol>
+</section>
+
+
+<section>
+  <h2><span class="num">§5</span> 改用 APISIX 的差異</h2>
+  <p class="sub">APISIX 是 OpenResty 血統，在 TLS 交涉上與 NGINX IC 受同樣的限制；差異在設定的套用方式。</p>
+
+  <p>APISIX 的 stream proxy 取得 SNI 的方式有兩種：自己與 client 完成 TLS 握手（termination），
+  或以 preread 讀取 ClientHello（passthrough，較新版本才支援）。<strong>兩者都要求 client 的首包是 TLS ClientHello</strong>，
+  文件中沒有 PostgreSQL <code>SSLRequest</code> 交涉的支援。因此 §2 的結論在 APISIX 上完全適用。</p>
+
+  <figure>
+    <svg viewBox="0 0 960 300" role="img" aria-label="改用 APISIX 後的資料路徑。Cluster A 內容與圖 1 相同。Cluster B 的邊界改為 APISIX stream proxy，同樣以 SNI 分流且不解密，TLS 一路加密到 PgBouncer。APISIX 的路由設定存放於 etcd，變更不觸發 nginx reload。client 仍必須使用 direct TLS，PgBouncer 仍需 1.25 以上。">
+      <defs>
+        <marker id="xa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <path d="M87 70 L87 60 L801 60 L801 70" fill="none" style="stroke:var(--accent)" stroke-width="1.3"/>
+        <rect x="330" y="51" width="248" height="18" style="fill:var(--surface)"/>
+        <text x="454" y="64" text-anchor="middle" font-size="10.5" style="fill:var(--accent)">TLS — client 到 PgBouncer，中途無人解密</text>
+
+        <rect x="10" y="84" width="352" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="24" y="102" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER A</text>
+        <rect x="394" y="84" width="556" height="122" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="408" y="102" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B</text>
+
+        <rect x="28" y="116" width="118" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="87" y="138" text-anchor="middle" font-size="12.5" font-weight="600">Client</text>
+        <text x="87" y="157" text-anchor="middle" font-size="9" style="fill:var(--stop)">sslnegotiation=direct</text>
+
+        <line x1="146" y1="144" x2="178" y2="144" stroke="currentColor" stroke-width="1.2" marker-end="url(#xa)"/>
+
+        <rect x="182" y="116" width="164" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="264" y="138" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
+        <text x="264" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
+
+        <line x1="346" y1="144" x2="404" y2="144" stroke="currentColor" stroke-width="1.2" marker-end="url(#xa)"/>
+
+        <rect x="410" y="116" width="214" height="56" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.6"/>
+        <text x="517" y="138" text-anchor="middle" font-size="12.5" font-weight="600" style="fill:var(--accent)">APISIX</text>
+        <text x="517" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">stream proxy · SNI 分流</text>
+
+        <line x1="624" y1="144" x2="662" y2="144" stroke="currentColor" stroke-width="1.2" marker-end="url(#xa)"/>
+
+        <rect x="668" y="116" width="266" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="801" y="138" text-anchor="middle" font-size="12.5" font-weight="600">PgBouncer</text>
+        <text x="801" y="157" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">TLS 在此終止</text>
+
+        <text x="87" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包為 ClientHello</text>
+        <text x="378" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+        <text x="517" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">讀 SNI，不解密</text>
+        <text x="801" y="192" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">出示 wildcard 憑證</text>
+
+        <line x1="87" y1="206" x2="87" y2="232" stroke="currentColor" stroke-width="1" opacity=".45"/>
+        <line x1="517" y1="206" x2="517" y2="232" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/>
+        <line x1="801" y1="206" x2="801" y2="232" stroke="currentColor" stroke-width="1" opacity=".45"/>
+
+        <rect x="10" y="232" width="352" height="52" rx="2" fill="none" style="stroke:var(--stop)" stroke-width="1.1"/>
+        <text x="24" y="252" font-size="9" style="fill:var(--stop)">client 仍必須使用 direct TLS</text>
+        <text x="24" y="270" font-size="9" style="fill:var(--stop)">此項與方案 A 相同，未解決</text>
+
+        <rect x="410" y="232" width="214" height="52" rx="2" fill="none" style="stroke:var(--good)" stroke-width="1.1"/>
+        <text x="424" y="252" font-size="9" font-weight="600" style="fill:var(--good)">etcd</text>
+        <text x="424" y="270" font-size="9" style="fill:var(--good)">路由熱更新，不觸發 reload</text>
+
+        <rect x="668" y="232" width="266" height="52" rx="2" fill="none" style="stroke:var(--stop)" stroke-width="1.1"/>
+        <text x="682" y="252" font-size="9" style="fill:var(--stop)">仍需 pgbouncer ≥ 1.25</text>
+        <text x="682" y="270" font-size="9" style="fill:var(--stop)">wildcard 私鑰仍在本 namespace</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 3 — 與圖 1 幾乎相同，這正是重點。</b> 資料路徑、TLS 涵蓋範圍、client 的要求、PgBouncer 的版本要求都與方案 A 一致；
+    唯一的差異是綠框那個 etcd——APISIX 的路由設定存在 etcd，worker 監聽變更後在記憶體中更新，<strong>新增 stream_route 不需要 reload</strong>。
+    換句話說，APISIX 換掉的是 reload 帶來的問題，沒有換掉 direct TLS 的前提。</figcaption>
+  </figure>
+
+  <p class="grp s0">不再需要處理<span>共 3 項</span></p>
+  <ol class="issues compact s0">
+    <li><div class="id">P5</div><div class="txt"><b>reload 的觸發來源</b>——路由存於 etcd，worker 監聽變更後在記憶體中更新，新增 stream_route 不重新產生設定檔。</div></li>
+    <li><div class="id">P6</div><div class="txt"><b>worker-shutdown-timeout</b>——沒有因設定變更而汰換 worker 的行為。</div></li>
+    <li><div class="id">P8</div><div class="txt"><b>443 的佔用</b>——stream proxy 的 listen port 在 <code>config.yaml</code> 獨立設定，不接管既有的 HTTPS。但<strong>新增 listen port 仍需改設定並重啟</strong>；共用一個 port 靠 SNI 分流則不受影響。</div></li>
+  </ol>
+
+  <p class="grp s3">維持不變<span>共 12 項</span></p>
+  <ol class="issues compact s3">
+    <li><div class="id">P1</div><div class="txt"><b>PgBouncer 版本</b>——passthrough 下握手仍由 PgBouncer 完成，1.25 的要求不變。</div></li>
+    <li><div class="id">P2</div><div class="txt"><b>連線方的程式套件</b>——APISIX 沒有 PostgreSQL STARTTLS 支援，client 仍須使用 direct TLS。<strong>這是最重要的一項，而 APISIX 不解決它。</strong></div></li>
+    <li><div class="id">P3 P4 P7 P9 P10 P12 P13 P15</div><div class="txt">憑證輪替、SAN 一層 label、三層 timeout、連線數、來源 IP、誤導的錯誤訊息、私鑰位置、健康檢查層級——與方案 A 相同。</div></li>
+    <li><div class="id">P11</div><div class="txt"><b>邊界可觀測性</b>——passthrough 下仍只搬 bytes。若改為 termination 模式可改善，但那需要 client 使用 direct TLS 且 APISIX 能回應 ALPN <code>postgresql</code>，<strong>後者在文件中沒有對應設定，需自行確認</strong>。</div></li>
+    <li><div class="id">P14</div><div class="txt"><b>唯一性</b>——需確認 APISIX 對重複 SNI 的 stream_route 的行為。</div></li>
+  </ol>
+
+  <p class="grp s1">新增的問題<span>需另外處理</span></p>
+  <ol class="issues s1">
+    <li>
+      <div class="id">X1</div>
+      <div>
+        <h4>etcd 相依</h4>
+        <dl>
+          <dt>症狀</dt><dd>APISIX 的設定存放於 etcd，需要一組可用的 etcd 叢集。etcd 本身要部署、備份、監控、處理版本升級與磁碟壓實。etcd 異常時 APISIX 無法載入新設定，既有路由則會繼續以記憶體中的內容運作。</dd>
+          <dt>處理</dt><dd>若組織已有共用的 etcd 可沿用；否則這是為了一個資料庫閘道而引入的額外基礎設施，成本需納入評估。</dd>
+        </dl>
+      </div>
+    </li>
+    <li>
+      <div class="id">X2</div>
+      <div>
+        <h4>多一個元件與新的維運方式</h4>
+        <dl>
+          <dt>症狀</dt><dd>與 T2、T3 相同：新增一個所有資料庫連線必經的單點，且設定模型（Route / Upstream / Plugin / stream_route）與 nginx 不同，除錯手法要重新累積。</dd>
+          <dt>處理</dt><dd>多副本部署、PodDisruptionBudget，納入既有監控與值班範圍。</dd>
+        </dl>
+      </div>
+    </li>
+    <li>
+      <div class="id">X3</div>
+      <div>
+        <h4>自行實作 STARTTLS 的路徑不可行</h4>
+        <dl>
+          <dt>症狀</dt><dd>直覺上會想用 Lua plugin 補上 <code>SSLRequest</code> 代答，但 OpenResty 的 <code>preread_by_lua</code> <strong>執行在 TLS 握手之後</strong>，無法在握手前寫回那個 <code>S</code>。APISIX 的 xRPC 框架雖然可用於實作 Redis、MySQL、Postgres 等應用層協定，但那是連線建立後的協定解析層，同樣碰不到 TLS 交涉階段。</dd>
+          <dt>處理</dt><dd>要在 APISIX 上解決此問題需修改 C 層的 stream ssl 模組，不在一般的 plugin 擴充範圍內。若必須自行實作，寫一個獨立的 proxy 比改 APISIX 單純。</dd>
+        </dl>
+      </div>
+    </li>
+  </ol>
+
+  <div class="note">
+    <span class="l">定位</span>
+    <p>APISIX 相對於 NGINX IC 的差異是<strong>設定套用的方式</strong>（etcd 熱更新取代 reload），
+    不是 TLS 交涉能力。它解決 P5 / P6 / P8，代價是 etcd 相依與一個新元件；
+    而 P2 這個唯一落在你控制範圍之外的問題，維持原狀。</p>
+  </div>
 </section>
 
 <footer>
