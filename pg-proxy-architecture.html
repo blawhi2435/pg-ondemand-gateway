@@ -138,7 +138,8 @@ footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
   <p class="kicker">架構文件 · 自建代理</p>
   <h1>自建 pg-proxy 架構</h1>
   <p class="dek">在 Cluster B 放一個自己寫的 PostgreSQL 感知代理：代答 <code>SSLRequest</code>、終止 TLS、
-  依 SNI 查表後直接轉發到對應的 Pooler。client 端零改動，既有 ingress 設定不再隨 pooler 數量變動。</p>
+  依 SNI 查表後直接轉發到對應的 Pooler。client 端零改動，路徑上不需要 ingress，
+  新增 pooler 只需要建立 Pooler 本身。</p>
 </header>
 
 <section>
@@ -146,7 +147,7 @@ footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
   <p class="sub">pg-proxy 是路徑上第一個需要看 TLS 內容的元件，因此由它負責整個交涉。</p>
 
   <figure>
-    <svg viewBox="0 0 960 380" role="img" aria-label="Cluster A 內有 client 與純 L4 轉送的 nginx stream。連線跨叢集進入 Cluster B，先經過只做單一 port 轉發的 ingress，再到 pg-proxy。pg-proxy 代答 SSLRequest、終止 TLS、依 SNI 查表，直接以 Kubernetes DNS 轉發到 tenant1、tenant2、tenant3 各自的 Pooler，並對每個後端重做標準的 PostgreSQL TLS 交涉。">
+    <svg viewBox="0 0 960 380" role="img" aria-label="Cluster A 內有 client 與純 L4 轉送的 nginx stream。連線跨叢集直接進入 Cluster B 的 pg-proxy，中間沒有 ingress。pg-proxy 以 LoadBalancer 型別的 Service 對外，代答 SSLRequest、終止 TLS、依 SNI 查表，直接以 Kubernetes DNS 轉發到 tenant1、tenant2、tenant3 各自的 Pooler，並對每個後端重做標準的 PostgreSQL TLS 交涉。">
       <defs>
         <marker id="pp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -157,9 +158,9 @@ footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
       </defs>
       <g font-family="IBM Plex Mono, monospace" fill="currentColor">
 
-        <path d="M80 54 L80 44 L588 44 L588 54" fill="none" style="stroke:var(--accent)" stroke-width="1.3"/>
-        <rect x="252" y="35" width="184" height="18" style="fill:var(--surface)"/>
-        <text x="344" y="48" text-anchor="middle" font-size="10.5" style="fill:var(--accent)">TLS — client 到 pg-proxy</text>
+        <path d="M80 54 L80 44 L480 44 L480 54" fill="none" style="stroke:var(--accent)" stroke-width="1.3"/>
+        <rect x="188" y="35" width="184" height="18" style="fill:var(--surface)"/>
+        <text x="280" y="48" text-anchor="middle" font-size="10.5" style="fill:var(--accent)">TLS — client 到 pg-proxy</text>
 
         <rect x="336" y="68" width="616" height="300" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
         <text x="350" y="86" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B</text>
@@ -176,47 +177,41 @@ footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
         <text x="228" y="207" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
         <text x="228" y="225" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
 
-        <line x1="292" y1="212" x2="350" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
-        <text x="321" y="203" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+        <line x1="292" y1="212" x2="374" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+        <text x="333" y="203" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
 
-        <rect x="354" y="186" width="116" height="52" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
-        <text x="412" y="207" text-anchor="middle" font-size="12" font-weight="600">Ingress</text>
-        <text x="412" y="225" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">單一 port 轉發</text>
+        <rect x="380" y="174" width="200" height="76" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.7"/>
+        <text x="480" y="198" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--accent)">pg-proxy</text>
+        <text x="480" y="216" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">代答 SSLRequest · 終止 TLS</text>
+        <text x="480" y="232" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">依 SNI 查表分流</text>
 
-        <line x1="470" y1="212" x2="496" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+        <path d="M580 212 L606 212 L606 119 L676 119" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+        <line x1="580" y1="212" x2="676" y2="212" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+        <path d="M580 212 L606 212 L606 305 L676 305" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
 
-        <rect x="500" y="174" width="176" height="76" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.7"/>
-        <text x="588" y="198" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--accent)">pg-proxy</text>
-        <text x="588" y="216" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">代答 SSLRequest · 終止 TLS</text>
-        <text x="588" y="232" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">依 SNI 查表分流</text>
+        <rect x="680" y="96" width="252" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="806" y="114" text-anchor="middle" font-size="11.5" font-weight="600">tenant1-pooler</text>
+        <text x="806" y="130" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant1.db.example.com</text>
 
-        <path d="M676 212 L702 212 L702 119 L726 119" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
-        <line x1="676" y1="212" x2="726" y2="212" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
-        <path d="M676 212 L702 212 L702 305 L726 305" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+        <rect x="680" y="189" width="252" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="806" y="207" text-anchor="middle" font-size="11.5" font-weight="600">tenant2-pooler</text>
+        <text x="806" y="223" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant2.db.example.com</text>
 
-        <rect x="730" y="96" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
-        <text x="833" y="114" text-anchor="middle" font-size="11.5" font-weight="600">tenant1-pooler</text>
-        <text x="833" y="130" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant1.db.example.com</text>
-
-        <rect x="730" y="189" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
-        <text x="833" y="207" text-anchor="middle" font-size="11.5" font-weight="600">tenant2-pooler</text>
-        <text x="833" y="223" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant2.db.example.com</text>
-
-        <rect x="730" y="282" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
-        <text x="833" y="300" text-anchor="middle" font-size="11.5" font-weight="600">tenant3-pooler</text>
-        <text x="833" y="316" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant3.db.example.com</text>
+        <rect x="680" y="282" width="252" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="806" y="300" text-anchor="middle" font-size="11.5" font-weight="600">tenant3-pooler</text>
+        <text x="806" y="316" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant3.db.example.com</text>
 
         <text x="80" y="258" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包為 SSLRequest</text>
-        <text x="412" y="258" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">設定永不變動</text>
-        <text x="588" y="268" text-anchor="middle" font-size="9" style="fill:var(--accent)">wildcard 憑證與私鑰在此</text>
+        <text x="480" y="268" text-anchor="middle" font-size="9" style="fill:var(--accent)">Service: LoadBalancer · wildcard 憑證與私鑰在此</text>
 
-        <text x="833" y="352" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">經 k8s DNS 直連，各自重做標準 PG TLS 交涉</text>
+        <text x="806" y="352" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">經 k8s DNS 直連，各自重做標準 PG TLS 交涉</text>
 
       </g>
     </svg>
-    <figcaption><b>圖 — 租戶感知全部收在 pg-proxy 裡。</b> Cluster A 的 nginx 與 Cluster B 的 ingress 都只做單一路徑的轉發，
-    <strong>兩者的設定都不隨 pooler 數量變動</strong>。分流發生在 pg-proxy：它終止 TLS，因此 SNI 是握手的正常產物，
-    不需要在握手前偷看。往後端則是走 Kubernetes DNS 直連 Pooler 的 Service——與同叢集時的連線方式相同。</figcaption>
+    <figcaption><b>圖 — 租戶感知全部收在 pg-proxy 裡，路徑上沒有 ingress。</b> pg-proxy 以 LoadBalancer 型別的 Service 直接對外，
+    Cluster A 的 nginx 只做單一路徑的 L4 轉發，設定不隨 pooler 數量變動。
+    分流發生在 pg-proxy：它終止 TLS，因此 SNI 是握手的正常產物，不需要在握手前偷看。
+    往後端走 Kubernetes DNS 直連 Pooler 的 Service——與同叢集時的連線方式相同。</figcaption>
   </figure>
 </section>
 
@@ -258,10 +253,17 @@ footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
   </ul>
 
   <div class="note a">
-    <span class="l">與既有 ingress 的關係</span>
-    <p>pg-proxy 不需要取代 ingress。讓 ingress 做<strong>單一 port 的純 TCP 轉發</strong>到 pg-proxy 的 Service 即可——
-    因為上面只有一條規則，<strong>新增 pooler 永遠不會改到 ingress 設定，也就不會觸發 reload</strong>。
-    對外的 port 與 LoadBalancer 管理沿用既有流程。</p>
+    <span class="l">不需要 ingress</span>
+    <p>pg-proxy 自己就是代理，讓另一個代理站在它前面純轉發沒有意義。直接給它一個
+    <code>type: LoadBalancer</code> 的 Service，Cluster A 的 nginx 指向那個 VIP 即可。
+    這樣少一跳、少一組連線狀態、少一個故障點，也少一層 idle timeout 要對齊。</p>
+    <p><strong>更重要的是 reload 問題會徹底消失</strong>——不是「設定不變所以不 reload」，
+    而是路徑上根本沒有 nginx controller。若掛在<strong>共用的</strong> ingress 後面，
+    其他團隊變更任何一個 Ingress 一樣會觸發 reload，一樣會在 <code>worker-shutdown-timeout</code>
+    到期後掐斷經過那一跳的連線。</p>
+    <p>唯一保留 ingress 的理由是「申請對外 IP 或防火牆規則要走流程」。若是如此，
+    請用<strong>專屬的 controller 實例</strong>，或改用 <code>NodePort</code> 讓既有的 LB 直接指過來，
+    繞開 ingress controller。</p>
   </div>
 </section>
 
