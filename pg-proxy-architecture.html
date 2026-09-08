@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>自建 pg-proxy 架構</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#edf1ef; --surface:#fbfcfb; --surface-2:#e2e9e5;
+  --line:#c3cfc9; --line-soft:#d7e0db;
+  --ink:#111a16; --ink-2:#4a5b53; --ink-3:#77887f;
+  --accent:#2f6152; --accent-soft:#dfeae5;
+  --stop:#9d3a26; --stop-soft:#f6e6e0;
+  --warn:#87610f; --warn-soft:#f3ecd9;
+  --shadow:0 1px 2px rgba(17,26,22,.06), 0 8px 24px -16px rgba(17,26,22,.4);
+  --col:700px; --wide:1000px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0c1210; --surface:#151d19; --surface-2:#1d2723;
+    --line:#2d3b35; --line-soft:#25312c;
+    --ink:#e4ece8; --ink-2:#a0b1a9; --ink-3:#7a8b83;
+    --accent:#6fc2a4; --accent-soft:#122a22;
+    --stop:#ef9078; --stop-soft:#361c15;
+    --warn:#ddaa54; --warn-soft:#302710;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0c1210; --surface:#151d19; --surface-2:#1d2723;
+  --line:#2d3b35; --line-soft:#25312c;
+  --ink:#e4ece8; --ink-2:#a0b1a9; --ink-3:#7a8b83;
+  --accent:#6fc2a4; --accent-soft:#122a22;
+  --stop:#ef9078; --stop-soft:#361c15;
+  --warn:#ddaa54; --warn-soft:#302710;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  font-size:15.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 24px 90px}
+p{margin:0 0 15px}
+a{color:var(--accent)}
+strong{font-weight:600;color:var(--ink)}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.87em;
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;color:var(--ink)}
+td,th,p,li{overflow-wrap:anywhere}
+
+.mast{border-bottom:2px solid var(--ink);padding:52px 0 20px;margin-bottom:32px}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 13px}
+h1{font-weight:700;font-size:clamp(30px,4.6vw,46px);line-height:1.08;letter-spacing:-.02em;
+  margin:0 0 14px;text-wrap:balance;max-width:15em}
+.dek{font-size:17px;color:var(--ink-2);max-width:640px;margin:0}
+
+section{margin:0 0 54px}
+h2{font-weight:600;font-size:23px;line-height:1.28;letter-spacing:-.01em;margin:0 0 5px;
+  display:flex;align-items:baseline;gap:12px}
+h2 .num{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;
+  color:var(--accent);flex:none}
+h2 + .sub{margin:0 0 22px;padding-left:36px;color:var(--ink-3);font-size:13.5px;max-width:var(--col)}
+h3{font-weight:600;font-size:16px;margin:28px 0 7px}
+section > p,section > ul,section > ol{max-width:var(--col)}
+ul,ol{margin:0 0 15px;padding-left:1.3em}
+li{margin:0 0 7px}
+li::marker{color:var(--ink-3)}
+
+figure{margin:24px 0;background:var(--surface);border:1px solid var(--line);
+  padding:22px 20px 14px;box-shadow:var(--shadow);max-width:100%}
+figure svg{display:block;width:100%;height:auto;color:var(--ink-2)}
+figcaption{margin-top:14px;padding-top:11px;border-top:1px solid var(--line-soft);
+  font-size:12.5px;line-height:1.6;color:var(--ink-3)}
+figcaption b{color:var(--ink-2);font-weight:600}
+
+.flow{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.95;
+  background:var(--surface);border:1px solid var(--line);padding:15px 18px;
+  margin:18px 0;max-width:var(--col);box-shadow:var(--shadow);overflow-x:auto;white-space:nowrap}
+.flow .t{display:block;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  font-weight:600;color:var(--accent);margin-bottom:8px;white-space:normal}
+.flow .s{color:var(--accent);font-weight:600;display:inline-block;min-width:2.2em}
+.flow .a{color:var(--ink-3)}
+.flow .n{color:var(--ink-3)}
+.flow .hi{color:var(--accent);font-weight:500}
+
+.code{background:var(--surface);border:1px solid var(--line);margin:18px 0;
+  box-shadow:var(--shadow);max-width:var(--col)}
+.code .hdr{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  color:var(--ink-3);padding:8px 15px;border-bottom:1px solid var(--line-soft);
+  background:var(--surface-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.code .hdr b{color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.1em}
+.code pre{margin:0;padding:15px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;
+  font-size:12.4px;line-height:1.66;color:var(--ink)}
+.code pre .c{color:var(--ink-3)}
+.code pre .k{color:var(--accent);font-weight:500}
+
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);
+  padding:13px 16px;margin:18px 0;font-size:14px;line-height:1.62;max-width:var(--col)}
+.note.a{border-left-color:var(--accent);background:var(--accent-soft)}
+.note .l{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:4px;color:var(--warn)}
+.note.a .l{color:var(--accent)}
+.note p:last-child{margin-bottom:0}
+
+.todo{list-style:none;padding:0;margin:20px 0;max-width:880px}
+.todo li{display:grid;grid-template-columns:44px 1fr;gap:14px;margin:0;
+  padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.todo li:first-child{border-top:1px solid var(--line-soft)}
+.todo .id{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;
+  color:var(--accent);padding-top:3px}
+.todo b{display:block;font-size:15px;font-weight:600;margin-bottom:3px}
+.todo span{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+
+footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;color:var(--ink-3);line-height:1.7;max-width:var(--col)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:640px){
+  .wrap{padding:0 16px 64px}
+  h2 + .sub{padding-left:0}
+  .todo li{grid-template-columns:1fr;gap:4px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">架構文件 · 自建代理</p>
+  <h1>自建 pg-proxy 架構</h1>
+  <p class="dek">在 Cluster B 放一個自己寫的 PostgreSQL 感知代理：代答 <code>SSLRequest</code>、終止 TLS、
+  依 SNI 查表後直接轉發到對應的 Pooler。client 端零改動，既有 ingress 設定不再隨 pooler 數量變動。</p>
+</header>
+
+<section>
+  <h2><span class="num">§1</span> 架構</h2>
+  <p class="sub">pg-proxy 是路徑上第一個需要看 TLS 內容的元件，因此由它負責整個交涉。</p>
+
+  <figure>
+    <svg viewBox="0 0 960 380" role="img" aria-label="Cluster A 內有 client 與純 L4 轉送的 nginx stream。連線跨叢集進入 Cluster B，先經過只做單一 port 轉發的 ingress，再到 pg-proxy。pg-proxy 代答 SSLRequest、終止 TLS、依 SNI 查表，直接以 Kubernetes DNS 轉發到 tenant1、tenant2、tenant3 各自的 Pooler，並對每個後端重做標準的 PostgreSQL TLS 交涉。">
+      <defs>
+        <marker id="pp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ppa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <path d="M80 54 L80 44 L588 44 L588 54" fill="none" style="stroke:var(--accent)" stroke-width="1.3"/>
+        <rect x="252" y="35" width="184" height="18" style="fill:var(--surface)"/>
+        <text x="344" y="48" text-anchor="middle" font-size="10.5" style="fill:var(--accent)">TLS — client 到 pg-proxy</text>
+
+        <rect x="336" y="68" width="616" height="300" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="350" y="86" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER B</text>
+        <rect x="8" y="158" width="300" height="112" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="22" y="176" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER A</text>
+
+        <rect x="24" y="186" width="112" height="52" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="80" y="207" text-anchor="middle" font-size="12.5" font-weight="600">Client</text>
+        <text x="80" y="225" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">sslmode=verify-full</text>
+
+        <line x1="136" y1="212" x2="160" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+
+        <rect x="164" y="186" width="128" height="52" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="228" y="207" text-anchor="middle" font-size="12.5" font-weight="600">nginx stream</text>
+        <text x="228" y="225" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">純 L4 轉送</text>
+
+        <line x1="292" y1="212" x2="350" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+        <text x="321" y="203" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">跨叢集</text>
+
+        <rect x="354" y="186" width="116" height="52" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="412" y="207" text-anchor="middle" font-size="12" font-weight="600">Ingress</text>
+        <text x="412" y="225" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">單一 port 轉發</text>
+
+        <line x1="470" y1="212" x2="496" y2="212" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+
+        <rect x="500" y="174" width="176" height="76" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.7"/>
+        <text x="588" y="198" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--accent)">pg-proxy</text>
+        <text x="588" y="216" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">代答 SSLRequest · 終止 TLS</text>
+        <text x="588" y="232" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">依 SNI 查表分流</text>
+
+        <path d="M676 212 L702 212 L702 119 L726 119" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+        <line x1="676" y1="212" x2="726" y2="212" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+        <path d="M676 212 L702 212 L702 305 L726 305" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#ppa)"/>
+
+        <rect x="730" y="96" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="833" y="114" text-anchor="middle" font-size="11.5" font-weight="600">tenant1-pooler</text>
+        <text x="833" y="130" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant1.db.example.com</text>
+
+        <rect x="730" y="189" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="833" y="207" text-anchor="middle" font-size="11.5" font-weight="600">tenant2-pooler</text>
+        <text x="833" y="223" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant2.db.example.com</text>
+
+        <rect x="730" y="282" width="206" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="833" y="300" text-anchor="middle" font-size="11.5" font-weight="600">tenant3-pooler</text>
+        <text x="833" y="316" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">tenant3.db.example.com</text>
+
+        <text x="80" y="258" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">首包為 SSLRequest</text>
+        <text x="412" y="258" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">設定永不變動</text>
+        <text x="588" y="268" text-anchor="middle" font-size="9" style="fill:var(--accent)">wildcard 憑證與私鑰在此</text>
+
+        <text x="833" y="352" text-anchor="middle" font-size="9" style="fill:var(--ink-3)">經 k8s DNS 直連，各自重做標準 PG TLS 交涉</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖 — 租戶感知全部收在 pg-proxy 裡。</b> Cluster A 的 nginx 與 Cluster B 的 ingress 都只做單一路徑的轉發，
+    <strong>兩者的設定都不隨 pooler 數量變動</strong>。分流發生在 pg-proxy：它終止 TLS，因此 SNI 是握手的正常產物，
+    不需要在握手前偷看。往後端則是走 Kubernetes DNS 直連 Pooler 的 Service——與同叢集時的連線方式相同。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="num">§2</span> 連線流程</h2>
+  <p class="sub">關鍵在第 3 與第 5 步：代答那一個 byte，之後 SNI 就自然到手。</p>
+
+  <div class="flow">
+    <span class="t">一次連線的完整交涉</span>
+    <span class="s">1.</span> client <span class="a">→</span> 建立明文 TCP<br>
+    <span class="s">2.</span> client <span class="a">→</span> SSLRequest <span class="n">(8 bytes)</span><br>
+    <span class="s">3.</span> pg-proxy <span class="a">→</span> <span class="hi">'S'</span> <span class="n">(1 byte，代答)</span><br>
+    <span class="s">4.</span> client <span class="a">→</span> ClientHello <span class="n">(SNI = tenant1.db.example.com)</span><br>
+    <span class="s">5.</span> pg-proxy <span class="a">→</span> 用 wildcard 憑證握手，<span class="hi">從握手取得 SNI</span><br>
+    <span class="s">6.</span> pg-proxy <span class="a">→</span> 查表：tenant1.db.example.com → tenant1-pooler.cnpg.svc:5432<br>
+    <span class="s">7.</span> pg-proxy <span class="a">→</span> 撥到後端，對後端<span class="hi">重做一次標準 SSLRequest 交涉</span><br>
+    <span class="s">8.</span> pg-proxy <span class="a">→</span> 雙向 io.Copy，直到任一端關閉
+  </div>
+
+  <p>第 5 步是整個設計的支點。nginx 的困境是「想在握手<strong>之前</strong>偷看 SNI」，所以需要 <code>ssl_preread</code>，
+  也因此被 <code>SSLRequest</code> 卡住。pg-proxy 是握手的<strong>執行方</strong>，SNI 對它而言是握手的正常輸出——
+  在 Go 裡連 <code>tls.Config.GetCertificate</code> 的回呼中就拿得到，可以在那裡直接拒絕未知的 hostname。</p>
+
+  <p>第 7 步是自建的第二個好處。因為程式是自己寫的，對後端可以走<strong>標準的</strong> PostgreSQL TLS 流程，
+  而不是 direct TLS——所以 PgBouncer 不需要 1.25 以上的版本，也不會有 ALPN 的問題。</p>
+</section>
+
+<section>
+  <h2><span class="num">§3</span> 為什麼放在 Cluster B</h2>
+  <p class="sub">位置決定了要裝幾套、私鑰放哪、以及能不能用 k8s DNS。</p>
+
+  <ul>
+    <li><strong>一套就夠。</strong>代答的元件放在被連的那一側只需要一份；放在連出去那一側，每多一個 client 叢集就要多裝一套，還要各自處理憑證。</li>
+    <li><strong>可以用 k8s DNS 直連 Pooler。</strong>pg-proxy 在 Cluster B 內，往後端就是
+    <code>tenant1-pooler.cnpg.svc.cluster.local:5432</code>——與你們同叢集時的連線方式完全相同，不需要再經過任何代理。</li>
+    <li><strong>能直接 watch Pooler CR。</strong>路由表的來源就在同一個叢集裡（見 §4）。放在 Cluster A 的話得另外想辦法同步。</li>
+    <li><strong>私鑰位置較合理。</strong>wildcard 私鑰留在資料庫側，而不是 pod 數量多、變動頻繁的應用服務叢集。</li>
+    <li><strong>Cluster A 維持零租戶設定。</strong>那台 nginx 依舊只是把 5432 轉到 Cluster B 的入口，新增 pooler 時不用動。</li>
+  </ul>
+
+  <div class="note a">
+    <span class="l">與既有 ingress 的關係</span>
+    <p>pg-proxy 不需要取代 ingress。讓 ingress 做<strong>單一 port 的純 TCP 轉發</strong>到 pg-proxy 的 Service 即可——
+    因為上面只有一條規則，<strong>新增 pooler 永遠不會改到 ingress 設定，也就不會觸發 reload</strong>。
+    對外的 port 與 LoadBalancer 管理沿用既有流程。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§4</span> 路由表從哪裡來</h2>
+  <p class="sub">建議直接 watch Pooler CR，新增 pooler 時不需要任何額外操作。</p>
+
+  <p>hostname 與後端的對應關係有兩種來源：</p>
+
+  <ul>
+    <li><strong>watch Pooler CR（建議）</strong>——在 Pooler 上加一個 annotation 標示對外 hostname，
+    pg-proxy 透過 informer 監聽變更並更新記憶體中的路由表。新增 pooler 時只要建立 Pooler 本身，
+    不需要另外產生 TransportServer 或 IngressRouteTCP。</li>
+    <li><strong>ConfigMap 靜態表</strong>——實作最簡單，但每次新增都要改一份設定並讓 pg-proxy 重讀。</li>
+  </ul>
+
+  <div class="code">
+    <div class="hdr"><span>pooler.yaml（節錄）</span><b>annotation 標示 hostname</b></div>
+<pre>apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: tenant1-pooler
+  namespace: cnpg
+  annotations:
+    <span class="k">pg-proxy.internal/hostname: tenant1.db.example.com</span>
+spec:
+  cluster:
+    name: tenant1-db
+  instances: 3
+  type: rw</pre>
+  </div>
+
+  <p>因為路由表由程式維護，可以在寫入時就檢查唯一性——同一個 hostname 被兩個 Pooler 宣告時直接拒絕並發出事件，
+  不會像 ingress CR 那樣靜默失敗。hostname 也可以由 Pooler 名稱自動推導，並強制單層 label
+  （wildcard 憑證只涵蓋一層，<code>a.b.db.example.com</code> 驗證會失敗）。</p>
+</section>
+
+<section>
+  <h2><span class="num">§5</span> 對後端的連線</h2>
+  <p class="sub">這一段的選擇決定了 PgBouncer 的版本要求，以及內網是否加密。</p>
+
+  <p>pg-proxy 撥到 Pooler 之後有三種做法：</p>
+
+  <ul>
+    <li><strong>標準 PostgreSQL TLS 交涉（建議）</strong>——送 <code>SSLRequest</code>、等 <code>S</code>、再握手。
+    PgBouncer 從很早的版本就支援這個流程，所以<strong>沒有 1.25 的版本要求</strong>。
+    憑證用 CNPG operator 自簽的內部 CA 驗證即可，wildcard 憑證不需要進到 Cluster。</li>
+    <li><strong>明文</strong>——實作最簡單，但需要 NetworkPolicy 限制只有 pg-proxy 能連 Pooler 的 Service。</li>
+    <li><strong>direct TLS</strong>——沒有理由選這個，它只會多帶一個 PgBouncer ≥ 1.25 的要求。</li>
+  </ul>
+
+  <div class="note a">
+    <span class="l">憑證的分工</span>
+    <p>選第一種的話，兩段憑證是分開的：<strong>對外</strong>用 wildcard 憑證，只存在於 pg-proxy；
+    <strong>對內</strong>用 CNPG 自己管理的內部 CA，Cluster 完全不需要設定 <code>serverTLSSecret</code>。
+    這是所有方案裡憑證分工最乾淨的一種。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§6</span> 需要自己處理的事</h2>
+  <p class="sub">核心邏輯很短，能不能上線取決於這些周邊。</p>
+
+  <ol class="todo">
+    <li><div class="id">01</div><div>
+      <b>Graceful shutdown</b>
+      <span>部署或重啟時不能直接砍掉所有連線。收到 SIGTERM 後停止接受新連線、等既有連線自然結束，並設一個上限時間。<code>terminationGracePeriodSeconds</code> 要配合調大。</span>
+    </div></li>
+    <li><div class="id">02</div><div>
+      <b>憑證熱重載</b>
+      <span>cert-manager 續期後要能在不重啟的情況下換上新憑證。用 <code>tls.Config.GetCertificate</code> 每次握手時讀取當前憑證，搭配檔案監看或定期重讀。</span>
+    </div></li>
+    <li><div class="id">03</div><div>
+      <b>連線上限與資源保護</b>
+      <span>每條連線佔兩個 socket 與兩個 goroutine。需要有全域上限、每個租戶的上限，以及超限時明確的拒絕行為，避免單一租戶耗盡整個 proxy。</span>
+    </div></li>
+    <li><div class="id">04</div><div>
+      <b>路由表的併發更新</b>
+      <span>informer 更新路由表的同時會有連線正在查表。用 atomic 換整份 map，不要就地修改。已建立的連線不受路由變更影響（它已經綁定後端）。</span>
+    </div></li>
+    <li><div class="id">05</div><div>
+      <b>後端故障與 timeout</b>
+      <span>後端連不上、握手失敗、閒置過久各自要有明確處理與回報。閒置 timeout 要與 Cluster A 的 nginx 及雲端 LB 對齊，避免互踢。</span>
+    </div></li>
+    <li><div class="id">06</div><div>
+      <b>可觀測性</b>
+      <span>至少要有：每個 hostname 的連線數與錯誤數、握手失敗原因、後端連線延遲。這是自建相對於第三方元件的優勢，但要自己實作。</span>
+    </div></li>
+    <li><div class="id">07</div><div>
+      <b>多副本</b>
+      <span>每條連線各自獨立、不共享狀態，所以可以水平擴充。Service 用一般的 ClusterIP 即可，不需要 session affinity。</span>
+    </div></li>
+    <li><div class="id">08</div><div>
+      <b>來源 IP 仍然會被改寫</b>
+      <span>這一項無法靠自建解決：PgBouncer 不支援 PROXY protocol，所以 PostgreSQL 看到的仍是 pooler pod 的 IP。可以在 pg-proxy 的 log 中記錄真實 client IP 與 hostname 做關聯。</span>
+    </div></li>
+  </ol>
+
+  <div class="note">
+    <span class="l">實作規模</span>
+    <p>核心邏輯（代答、握手、查表、雙向 copy）大約兩百行。加上以上八項與測試，實際約 <strong>500–800 行</strong>。
+    這是你完全掌握的程式碼，代價是它的正確性與維護也完全由你負責。</p>
+  </div>
+</section>
+
+<footer>
+  <p>相關文件：〈Pooler TLS 直通架構〉（方案 A 與 Traefik / APISIX 的對照）、〈跨叢集邊界方案選型〉、〈TLS 直通設定清單〉。</p>
+</footer>
+
+</div>
+</body>
+</html>

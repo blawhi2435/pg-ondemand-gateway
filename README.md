@@ -10,6 +10,7 @@ Cluster A 的應用服務經由 wildcard 網域連線到 Cluster B 的 CloudNati
 | [edge-option-decision.html](edge-option-decision.html) | 方案選型：TLS 直通（A）與協定感知代理（B）的逐項比較與建議 |
 | [passthrough-implementation.html](passthrough-implementation.html) | 方案 A：架構、TLS 不在邊界終止的原因、P1–P15 需注意的問題、改用 Traefik 的差異 |
 | [passthrough-config.html](passthrough-config.html) | 方案 A 的設定清單，依套用順序排列 |
+| [pg-proxy-architecture.html](pg-proxy-architecture.html) | 自建 PostgreSQL 感知代理：代答 SSLRequest、依 SNI 直接轉發到各租戶 Pooler，client 端零改動 |
 
 ## 版本相依
 
