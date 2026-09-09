@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>pg-proxy 兩階段實作</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#edf1ef; --surface:#fbfcfb; --surface-2:#e2e9e5;
+  --line:#c3cfc9; --line-soft:#d7e0db;
+  --ink:#111a16; --ink-2:#4a5b53; --ink-3:#77887f;
+  --accent:#2f6152; --accent-soft:#dfeae5;
+  --stop:#9d3a26; --stop-soft:#f6e6e0;
+  --warn:#87610f; --warn-soft:#f3ecd9;
+  --shadow:0 1px 2px rgba(17,26,22,.06), 0 8px 24px -16px rgba(17,26,22,.4);
+  --col:700px; --wide:1000px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0c1210; --surface:#151d19; --surface-2:#1d2723;
+    --line:#2d3b35; --line-soft:#25312c;
+    --ink:#e4ece8; --ink-2:#a0b1a9; --ink-3:#7a8b83;
+    --accent:#6fc2a4; --accent-soft:#122a22;
+    --stop:#ef9078; --stop-soft:#361c15;
+    --warn:#ddaa54; --warn-soft:#302710;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0c1210; --surface:#151d19; --surface-2:#1d2723;
+  --line:#2d3b35; --line-soft:#25312c;
+  --ink:#e4ece8; --ink-2:#a0b1a9; --ink-3:#7a8b83;
+  --accent:#6fc2a4; --accent-soft:#122a22;
+  --stop:#ef9078; --stop-soft:#361c15;
+  --warn:#ddaa54; --warn-soft:#302710;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  font-size:15.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--wide);margin:0 auto;padding:0 24px 90px}
+p{margin:0 0 15px}
+a{color:var(--accent)}
+strong{font-weight:600;color:var(--ink)}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.87em;
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;color:var(--ink)}
+td,th,p,li{overflow-wrap:anywhere}
+
+.mast{border-bottom:2px solid var(--ink);padding:52px 0 20px;margin-bottom:32px}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 13px}
+h1{font-weight:700;font-size:clamp(30px,4.6vw,46px);line-height:1.08;letter-spacing:-.02em;
+  margin:0 0 14px;text-wrap:balance;max-width:15em}
+.dek{font-size:17px;color:var(--ink-2);max-width:640px;margin:0}
+
+section{margin:0 0 54px}
+h2{font-weight:600;font-size:23px;line-height:1.28;letter-spacing:-.01em;margin:0 0 5px;
+  display:flex;align-items:baseline;gap:12px}
+h2 .num{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;
+  color:var(--accent);flex:none}
+h2 + .sub{margin:0 0 22px;padding-left:36px;color:var(--ink-3);font-size:13.5px;max-width:var(--col)}
+h3{font-weight:600;font-size:16px;margin:28px 0 7px}
+section > p,section > ul,section > ol{max-width:var(--col)}
+ul,ol{margin:0 0 15px;padding-left:1.3em}
+li{margin:0 0 7px}
+li::marker{color:var(--ink-3)}
+
+figure{margin:24px 0;background:var(--surface);border:1px solid var(--line);
+  padding:22px 20px 14px;box-shadow:var(--shadow);max-width:100%}
+figure svg{display:block;width:100%;height:auto;color:var(--ink-2)}
+figcaption{margin-top:14px;padding-top:11px;border-top:1px solid var(--line-soft);
+  font-size:12.5px;line-height:1.6;color:var(--ink-3)}
+figcaption b{color:var(--ink-2);font-weight:600}
+
+.flow{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.95;
+  background:var(--surface);border:1px solid var(--line);padding:15px 18px;
+  margin:18px 0;max-width:var(--col);box-shadow:var(--shadow);overflow-x:auto;white-space:nowrap}
+.flow .t{display:block;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  font-weight:600;color:var(--accent);margin-bottom:8px;white-space:normal}
+.flow .s{color:var(--accent);font-weight:600;display:inline-block;min-width:2.2em}
+.flow .a{color:var(--ink-3)}
+.flow .n{color:var(--ink-3)}
+.flow .hi{color:var(--accent);font-weight:500}
+
+.code{background:var(--surface);border:1px solid var(--line);margin:18px 0;
+  box-shadow:var(--shadow);max-width:var(--col)}
+.code .hdr{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  color:var(--ink-3);padding:8px 15px;border-bottom:1px solid var(--line-soft);
+  background:var(--surface-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.code .hdr b{color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.1em}
+.code pre{margin:0;padding:15px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;
+  font-size:12.4px;line-height:1.66;color:var(--ink)}
+.code pre .c{color:var(--ink-3)}
+.code pre .k{color:var(--accent);font-weight:500}
+
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);
+  padding:13px 16px;margin:18px 0;font-size:14px;line-height:1.62;max-width:var(--col)}
+.note.a{border-left-color:var(--accent);background:var(--accent-soft)}
+.note .l{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:600;display:block;margin-bottom:4px;color:var(--warn)}
+.note.a .l{color:var(--accent)}
+.note p:last-child{margin-bottom:0}
+
+.todo{list-style:none;padding:0;margin:20px 0;max-width:880px}
+.todo li{display:grid;grid-template-columns:44px 1fr;gap:14px;margin:0;
+  padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.todo li:first-child{border-top:1px solid var(--line-soft)}
+.todo .id{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;
+  color:var(--accent);padding-top:3px}
+.todo b{display:block;font-size:15px;font-weight:600;margin-bottom:3px}
+.todo span{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+
+footer{margin-top:52px;padding-top:18px;border-top:2px solid var(--ink);
+  font-size:12px;color:var(--ink-3);line-height:1.7;max-width:var(--col)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:640px){
+  .wrap{padding:0 16px 64px}
+  h2 + .sub{padding-left:0}
+  .todo li{grid-template-columns:1fr;gap:4px}
+}
+
+.lim{list-style:none;padding:0;margin:20px 0;max-width:880px}
+.lim li{margin:0;padding:13px 0 13px 16px;border-left:3px solid var(--line);
+  border-bottom:1px solid var(--line-soft)}
+.lim li:first-child{border-top:1px solid var(--line-soft)}
+.lim b{display:block;font-size:14.5px;font-weight:600;margin-bottom:3px}
+.lim span{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+.lim li.ok{border-left-color:var(--accent)}
+.lim li.no{border-left-color:var(--stop)}
+
+.scroll{overflow-x:auto;max-width:100%;margin:18px 0}
+.tbl{border-collapse:collapse;font-size:13.5px;min-width:560px;width:100%;
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}
+.tbl th,.tbl td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.tbl th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;background:var(--surface-2);white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td code{background:none;padding:0;color:var(--accent);white-space:nowrap}
+
+.phase{list-style:none;padding:0;margin:20px 0;max-width:880px}
+.phase li{display:grid;grid-template-columns:104px 1fr;gap:16px;padding:14px 0;
+  border-bottom:1px solid var(--line-soft)}
+.phase li:first-child{border-top:1px solid var(--line-soft)}
+.phase .p{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--accent);font-weight:600;padding-top:3px}
+.phase b{display:block;font-size:15px;margin-bottom:3px}
+.phase span{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+@media (max-width:640px){.phase li{grid-template-columns:1fr;gap:4px}}
+
+.card{border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow);
+  padding:16px 18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin:20px 0}
+.card h4{margin:0 0 6px;font-family:"IBM Plex Mono",monospace;font-size:13.5px;
+  font-weight:600;color:var(--accent)}
+.card .r{display:grid;grid-template-columns:56px 1fr;gap:10px;font-size:13px;
+  padding:7px 0;border-top:1px solid var(--line-soft);line-height:1.55}
+.card .r b{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;
+  color:var(--ink-3);font-weight:600;padding-top:2px}
+.card .r.k b{color:var(--accent)}
+.card .r span{color:var(--ink-2)}
+.card .r.k span{color:var(--ink)}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">實作規格 · 分階段交付</p>
+  <h1>pg-proxy 兩階段實作</h1>
+  <p class="dek">這份文件只規劃 <strong>pg-proxy 這一個服務</strong>，是給實作者照著做的規格。
+  <strong>第一階段</strong>：終止 TLS、依 SNI 分流、記錄每一條連線、轉發到 Pooler，不做任何判斷。
+  <strong>第二階段</strong>：讀 Redis，做連線層的權限控制與撤銷。
+  第一階段有四個接縫現在就要留好，否則第二階段是重寫。</p>
+</header>
+
+<section>
+  <h2><span class="num">§0</span> 範圍與交付目標</h2>
+  <p class="sub">只做 pg-proxy。Redis 裡的資料由已經存在的中央服務維護，不在這份規劃裡。</p>
+
+  <ul class="lim">
+    <li class="ok">
+      <b>第一階段做完之後</b>
+      <span>所有 client 經 APISIX 連到 pg-proxy，再由 pg-proxy 轉到各 cluster 的 Pooler，
+      client 端零改動。stdout 有每一條連線的
+      <code>cluster</code> / <code>user</code> / <code>database</code> / <code>client_ip</code>。
+      <strong>沒有任何連線會被拒絕。</strong></span>
+    </li>
+    <li class="ok">
+      <b>第二階段做完之後</b>
+      <span>中央服務在 Redis 把某個帳號的授權清空，
+      <strong>新連線立刻被擋、既有連線在十秒內斷開</strong>，被擋的連線也有稽核紀錄。
+      Redis 掛掉或資料不見時，資料庫連線不受影響（降級 + 告警）。</span>
+    </li>
+    <li class="no">
+      <b>不在這份規劃裡：中央服務那一側</b>
+      <span>誰把資料寫進 Redis、寫失敗怎麼補、資料從哪個表來——都是既有中央服務的事。
+      pg-proxy 只負責<strong>讀</strong>，而且必須在讀不到或讀到怪東西時安全地降級。
+      需要跟他們談定的只有 §7 那份讀取契約。</span>
+    </li>
+    <li class="no">
+      <b>不在這兩階段裡：SQL 語句層</b>
+      <span>記錄或攔截 SQL 需要持續解析訊息，雙向轉發的快路徑就此消失。那是之後的事（見 §10）。</span>
+    </li>
+  </ul>
+
+  <div class="code">
+    <div class="hdr"><span>建議的程式碼佈局</span><b>接縫就是這些 package 的邊界</b></div>
+<pre>cmd/pg-proxy/main.go          <span class="c"># 組裝與設定</span>
+
+internal/proxy/               <span class="c"># listener、handleConn（§4 的十一步）</span>
+internal/pgwire/              <span class="c"># 首包判斷、StartupMessage、ErrorResponse</span>
+internal/route/               <span class="c">#</span> <span class="k">接縫 A</span> <span class="c">Router</span>
+internal/authz/               <span class="c">#</span> <span class="k">接縫 B</span> <span class="c">Authorizer：allowAll / redis</span>
+internal/registry/            <span class="c">#</span> <span class="k">接縫 C</span> <span class="c">連線登記表 + Sweep</span>
+internal/relay/               <span class="c">#</span> <span class="k">接縫 D</span> <span class="c">Relay：copyRelay</span>
+internal/audit/               <span class="c"># 事件型別 + JSON sink</span></pre>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§1</span> 整體架構</h2>
+  <p class="sub">單一叢集。實線是第一階段就要有的，虛線是第二階段才加上去的。</p>
+
+  <figure>
+    <svg viewBox="0 0 960 440" role="img" aria-label="整體架構圖。單一叢集內，client 經 APISIX 的單一 L4 stream route 連到 pg-proxy，TLS 不在 APISIX 終止。pg-proxy 代答 SSLRequest、終止 TLS、依 SNI 查出 cluster 與後端位址、解析 StartupMessage、轉發位元組，再連到 tenant1 至 tenant3 三個 Pooler，Pooler 外圍有 NetworkPolicy 只允許 pg-proxy 連入。pg-proxy 輸出稽核 log 到 stdout。以虛線標示的第二階段部分：叢集外既有的中央服務在開通或停用時直接寫 Redis；pg-proxy 在每條新連線時向 Redis 查詢一次；pg-proxy 另有每十秒一次的定期重驗，撤銷時送 FATAL 57P01。中央服務本身不在這份規劃範圍內。">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <rect x="136" y="40" width="810" height="390" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="150" y="60" font-size="10" letter-spacing="1.4" style="fill:var(--ink-3)">CLUSTER</text>
+
+        <rect x="660" y="80" width="286" height="280" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="2 3" opacity=".55"/>
+        <text x="674" y="100" font-size="9.5" letter-spacing="1.2" style="fill:var(--ink-3)">NETWORKPOLICY · 只允許 pg-proxy</text>
+
+        <rect x="16" y="76" width="104" height="44" rx="2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="3 3" opacity=".7"/>
+        <text x="68" y="94" text-anchor="middle" font-size="10" font-weight="600" style="fill:var(--ink-3)">中央服務</text>
+        <text x="68" y="110" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">不在本規劃內</text>
+
+        <line x1="120" y1="98" x2="306" y2="98" style="stroke:var(--accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+        <rect x="156" y="90" width="114" height="15" style="fill:var(--paper)"/>
+        <text x="213" y="102" text-anchor="middle" font-size="8" style="fill:var(--accent)">開通/停用時 HSET</text>
+
+        <rect x="310" y="64" width="230" height="56" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.4" stroke-dasharray="5 3"/>
+        <text x="425" y="86" text-anchor="middle" font-size="11.5" font-weight="600" style="fill:var(--accent)">Redis</text>
+        <text x="425" y="104" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">pgproxy:policy:{cluster}</text>
+
+        <line x1="425" y1="120" x2="425" y2="166" style="stroke:var(--accent)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+        <text x="435" y="146" font-size="8.5" style="fill:var(--accent)">每條新連線查一次</text>
+
+        <rect x="16" y="200" width="104" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="68" y="224" text-anchor="middle" font-size="12" font-weight="600">Client</text>
+        <text x="68" y="242" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">verify-full</text>
+        <line x1="120" y1="228" x2="148" y2="228" stroke="currentColor" stroke-width="1.2" marker-end="url(#a1)"/>
+
+        <rect x="152" y="200" width="126" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="215" y="224" text-anchor="middle" font-size="12" font-weight="600">APISIX</text>
+        <text x="215" y="242" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">單一 L4 route</text>
+        <line x1="278" y1="228" x2="306" y2="228" stroke="currentColor" stroke-width="1.2" marker-end="url(#a1)"/>
+        <text x="292" y="272" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">TLS 不在此終止</text>
+
+        <rect x="310" y="170" width="230" height="116" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.8"/>
+        <text x="425" y="196" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--accent)">pg-proxy</text>
+        <text x="425" y="218" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">代答 SSLRequest · 終止 TLS</text>
+        <text x="425" y="235" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">SNI → cluster + 後端位址</text>
+        <text x="425" y="252" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">解析 StartupMessage</text>
+        <text x="425" y="269" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">雙向轉發</text>
+
+        <path d="M540 228 L600 228 L600 128 L676 128" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#a2)"/>
+        <line x1="540" y1="228" x2="676" y2="228" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#a2)"/>
+        <path d="M540 228 L600 228 L600 328 L676 328" fill="none" style="stroke:var(--accent)" stroke-width="1.3" marker-end="url(#a2)"/>
+
+        <rect x="680" y="104" width="246" height="48" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="803" y="124" text-anchor="middle" font-size="11" font-weight="600">tenant1-pooler</text>
+        <text x="803" y="141" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">tenant1.db.example.com</text>
+
+        <rect x="680" y="204" width="246" height="48" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="803" y="224" text-anchor="middle" font-size="11" font-weight="600">tenant2-pooler</text>
+        <text x="803" y="241" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">tenant2.db.example.com</text>
+
+        <rect x="680" y="304" width="246" height="48" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="803" y="324" text-anchor="middle" font-size="11" font-weight="600">tenant3-pooler</text>
+        <text x="803" y="341" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">tenant3.db.example.com</text>
+
+        <path d="M310 266 L296 266 L296 342 L290 342" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#a1)"/>
+        <rect x="16" y="316" width="270" height="52" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="151" y="338" text-anchor="middle" font-size="11" font-weight="600">稽核 log · stdout</text>
+        <text x="151" y="356" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">connect / disconnect（二階段多 auth）</text>
+
+        <line x1="425" y1="286" x2="425" y2="312" style="stroke:var(--accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+        <rect x="310" y="316" width="230" height="52" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.3" stroke-dasharray="5 3"/>
+        <text x="425" y="338" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--accent)">定期重驗 · 每 10 秒</text>
+        <text x="425" y="356" text-anchor="middle" font-size="8" style="fill:var(--ink-3)">撤銷送 FATAL 57P01</text>
+
+        <line x1="676" y1="404" x2="700" y2="404" style="stroke:var(--accent)" stroke-width="1.3" stroke-dasharray="5 3"/>
+        <text x="708" y="408" font-size="9" style="fill:var(--accent)">虛線 = 第二階段才加上去的</text>
+
+      </g>
+    </svg>
+    <figcaption><b>圖一 —</b> 要蓋的只有中間那一格。中央服務與 Redis 的內容是<strong>給定的外部條件</strong>。
+    <b>APISIX 只能是純 L4</b>：PostgreSQL 的第一個封包是 <code>SSLRequest</code> 而不是 TLS ClientHello，
+    所以 APISIX 看不到 SNI，做不了分流——stream route 只有一條，upstream 就是 pg-proxy。
+    要確認它能不能對 upstream 帶 PROXY protocol；不能的話 <code>client_ip</code> 會是 APISIX 的 pod IP，
+    log 就少掉最有用的一欄，那時值得考慮讓 pg-proxy 直接掛 LoadBalancer。
+    <b>NetworkPolicy 是第二階段的前提</b>：只要叢集裡任何 pod 都能直連
+    <code>tenant1-pooler.cnpg.svc</code>，權限控制就只是「有禮貌的人會被擋」。
+    它跟第一階段一起上線最省事。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="num">§2</span> 兩階段的分界</h2>
+  <p class="sub">兩個階段動的是同一條連線的同一個位置。</p>
+
+  <p>那個位置是：<strong>TLS 握完、<code>StartupMessage</code> 讀完、還沒撥後端的那一瞬間</strong>。
+  第一階段在那裡把 <code>user</code> 與 <code>database</code> 寫進 log 就繼續往下走；
+  第二階段在同一個位置多問一次 Redis，然後決定要不要往下走。</p>
+
+  <p>所以第一階段<strong>必須解析 <code>StartupMessage</code></strong>，只是解析完不做判斷。
+  多寫大約五十行，換來兩件事：log 裡有真實的帳號與資料庫
+  （第二階段要對帳的清單就靠它，見 §6），
+  以及第二階段的插入點已經存在，不用回頭改連線流程。</p>
+
+  <figure>
+    <svg viewBox="0 0 960 340" role="img" aria-label="兩階段分界圖。上排是第一階段的六個處理步驟：接受 TCP 並代答 SSLRequest、TLS 握手取得 SNI、查路由表得到 cluster 與後端位址、讀 StartupMessage 取出 user 與 database、撥後端並轉送認證訊息、雙向轉發。下排以虛線標出第二階段才加上去的東西：在讀 StartupMessage 之後插入閘門一，向 Redis 查詢一次，不通過就回 FATAL 28000；以及在轉發階段旁邊加上每十秒一次的重驗掃描，撤銷時送 FATAL 57P01。兩者都查同一個 Redis。">
+      <defs>
+        <marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="p2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" fill="currentColor">
+
+        <text x="16" y="104" font-size="11" font-weight="600" style="fill:var(--ink)">第一階段 — 這一整排</text>
+
+        <rect x="16" y="120" width="136" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="84" y="148" text-anchor="middle" font-size="11" font-weight="600">SSLRequest</text>
+        <text x="84" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">代答 'S'</text>
+        <text x="84" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">辨識 Cancel / GSS</text>
+        <line x1="152" y1="158" x2="170" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#p1)"/>
+
+        <rect x="174" y="120" width="136" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="242" y="148" text-anchor="middle" font-size="11" font-weight="600">TLS 握手</text>
+        <text x="242" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">wildcard 憑證</text>
+        <text x="242" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">取得 SNI</text>
+        <line x1="310" y1="158" x2="328" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#p1)"/>
+
+        <rect x="332" y="120" width="136" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="400" y="148" text-anchor="middle" font-size="11" font-weight="600">查路由表</text>
+        <text x="400" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">SNI 換 cluster</text>
+        <text x="400" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">與後端位址</text>
+        <line x1="468" y1="158" x2="486" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#p1)"/>
+
+        <rect x="490" y="120" width="136" height="76" rx="2" style="fill:var(--accent-soft)" stroke="currentColor" stroke-width="1.4"/>
+        <text x="558" y="148" text-anchor="middle" font-size="11" font-weight="600">StartupMessage</text>
+        <text x="558" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">取出 user / database</text>
+        <text x="558" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--accent)">解析，但不判斷</text>
+        <line x1="626" y1="158" x2="644" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#p1)"/>
+
+        <rect x="648" y="120" width="136" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="716" y="148" text-anchor="middle" font-size="11" font-weight="600">撥後端</text>
+        <text x="716" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">標準 TLS 交涉</text>
+        <text x="716" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">轉送認證訊息</text>
+        <line x1="784" y1="158" x2="802" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#p1)"/>
+
+        <rect x="806" y="120" width="136" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="874" y="148" text-anchor="middle" font-size="11" font-weight="600">轉發</text>
+        <text x="874" y="166" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">雙向 io.Copy</text>
+        <text x="874" y="182" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">登記 / 註銷連線</text>
+
+        <text x="16" y="275" font-size="11" font-weight="600" style="fill:var(--accent)">第二階段</text>
+        <text x="16" y="292" font-size="8.5" style="fill:var(--ink-3)">第一階段只要把接縫留好</text>
+        <text x="16" y="308" font-size="8.5" style="fill:var(--ink-3)">見 §5</text>
+
+        <line x1="558" y1="196" x2="558" y2="242" style="stroke:var(--accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#p2)"/>
+        <line x1="874" y1="196" x2="874" y2="242" style="stroke:var(--accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#p2)"/>
+
+        <rect x="490" y="246" width="136" height="70" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.4" stroke-dasharray="5 3"/>
+        <text x="558" y="272" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--accent)">閘門 ①</text>
+        <text x="558" y="290" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">查一次 Redis</text>
+        <text x="558" y="306" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">不通過就 28000</text>
+
+        <rect x="648" y="246" width="136" height="70" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.4" stroke-dasharray="5 3"/>
+        <text x="716" y="272" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--accent)">Redis</text>
+        <text x="716" y="290" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">pgproxy:policy:</text>
+        <text x="716" y="306" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">{cluster}</text>
+
+        <rect x="806" y="246" width="136" height="70" rx="2" fill="none" style="stroke:var(--accent)" stroke-width="1.4" stroke-dasharray="5 3"/>
+        <text x="874" y="272" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--accent)">重驗掃描</text>
+        <text x="874" y="290" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">每 10 秒</text>
+        <text x="874" y="306" text-anchor="middle" font-size="8.5" style="fill:var(--ink-3)">撤銷送 57P01</text>
+
+        <line x1="644" y1="281" x2="630" y2="281" style="stroke:var(--accent)" stroke-width="1.2" marker-end="url(#p2)"/>
+        <line x1="788" y1="281" x2="802" y2="281" style="stroke:var(--accent)" stroke-width="1.2" marker-end="url(#p2)"/>
+
+      </g>
+    </svg>
+    <figcaption><b>圖二 —</b> 上排六格是第一階段的全部。第四格是關鍵：
+    <strong>第一階段就要解析 <code>StartupMessage</code>，只是解析完直接放行</strong>。
+    第二階段做的事全部掛在虛線那一排，上排一格都不用改。
+    如果第一階段跳過第四格（TLS 握完就直接 <code>io.Copy</code>），
+    第二階段就得回頭把連線流程拆開重接——那才是真正的成本。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="num">§3</span> 第一階段 · 範圍</h2>
+  <p class="sub">把「不做什麼」寫得跟「做什麼」一樣清楚，否則範圍一定會漂。</p>
+
+  <ul class="lim">
+    <li class="ok">
+      <b>終止 TLS</b>
+      <span>讀首包的 8 bytes 判斷型別。對 <code>SSLRequest</code> 回 <code>'S'</code>
+      後用 wildcard 憑證握手；<code>GSSENCRequest</code> 回 <code>'N'</code>；
+      <code>CancelRequest</code> 依 SNI 轉給對應 Pooler，不做其他事。</span>
+    </li>
+    <li class="ok">
+      <b>依 SNI 分流</b>
+      <span>從握手拿到 hostname，查路由表得到 <strong>cluster 識別字</strong>與後端位址。
+      cluster 識別字第一階段只寫進 log，但<strong>現在就要有</strong>——第二階段拿它當 Redis 的 key。</span>
+    </li>
+    <li class="ok">
+      <b>解析 StartupMessage</b>
+      <span>取出 <code>user</code>、<code>database</code>、<code>application_name</code>，
+      <strong>不做任何判斷</strong>，原樣轉給後端。</span>
+    </li>
+    <li class="ok">
+      <b>記錄與轉發</b>
+      <span>登記連線、輸出 <code>connect</code> 事件、對後端做標準 PostgreSQL TLS 交涉、
+      雙向轉發位元組、結束時註銷並輸出 <code>disconnect</code> 事件。</span>
+    </li>
+    <li class="no">
+      <b>不做：任何權限判斷</b>
+      <span>沒有 Redis、沒有政策、沒有拒絕邏輯。所有連線一律放行。</span>
+    </li>
+    <li class="no">
+      <b>不做：startup 之後的訊息解析</b>
+      <span>轉發之後就不看內容了，所以沒有 SQL log。</span>
+    </li>
+  </ul>
+
+  <div class="note a">
+    <span class="l">第一階段的難度不在上面那四件事</span>
+    <p>核心邏輯大概兩百行。真正決定能不能上線的是周邊：
+    <strong>graceful shutdown</strong>（SIGTERM 後停收新連線、等既有連線結束，
+    <code>terminationGracePeriodSeconds</code> 要一起調大）、
+    <strong>憑證熱重載</strong>（<code>tls.Config.GetCertificate</code> 每次握手讀當前憑證，
+    cert-manager 續期後不重啟就換上）、<strong>全域與每個 cluster 的連線上限</strong>、
+    <strong>後端故障與 idle timeout 的處理</strong>（idle timeout 要與 APISIX 及雲端 LB 對齊，
+    避免互踢）、<strong>metrics</strong>。這五項的工作量比核心邏輯大。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§4</span> 第一階段 · 連線流程與協定細節</h2>
+  <p class="sub">從 accept 到關閉，接縫的位置標在右邊。</p>
+
+  <div class="flow">
+    <span class="t">handleConn</span>
+    <span class="s">1.</span> accept，設 TCP_NODELAY 與握手 deadline<br>
+    <span class="s">2.</span> 讀 8 bytes <span class="a">→</span> 判斷首包型別<br>
+    <span class="s">3.</span> 回 <span class="hi">'S'</span>，TLS 握手 <span class="n">（憑證由 GetCertificate 動態取得）</span><br>
+    <span class="s">4.</span> <span class="hi">Router.Lookup(sni)</span> <span class="a">→</span> cluster、後端位址 <span class="n">← 接縫 A</span><br>
+    <span class="s">5.</span> 讀 StartupMessage <span class="a">→</span> user、database、application_name<br>
+    <span class="s">6.</span> <span class="hi">Authorizer.Check(...)</span> <span class="a">→</span> 第一階段永遠回 allow <span class="n">← 接縫 B</span><br>
+    <span class="s">7.</span> 撥後端、標準 SSLRequest 交涉、原樣送出 StartupMessage<br>
+    <span class="s">8.</span> 雙向轉送認證訊息，等到 <span class="hi">AuthenticationOk</span><br>
+    <span class="s">9.</span> <span class="hi">Registry.Add(conn)</span> 並輸出 connect 事件 <span class="n">← 接縫 C</span><br>
+    <span class="s">10.</span> <span class="hi">Relay.Run(client, backend)</span> <span class="a">→</span> 第一階段就是 io.Copy <span class="n">← 接縫 D</span><br>
+    <span class="s">11.</span> defer：Registry.Remove 並輸出 disconnect 事件
+  </div>
+
+  <p>第 6 步在第一階段是一個永遠回 <code>allow</code> 的空實作，
+  但它<strong>必須存在，而且必須在第 7 步之前</strong>。
+  第 8 步要等 <code>AuthenticationOk</code> 才登記連線，是因為在那之前 client 宣稱的
+  <code>user</code> 還沒被驗證——log 的可信度取決於它，現在就照這個順序寫。</p>
+
+  <h3>首包的四種可能</h3>
+  <div class="code">
+    <div class="hdr"><span>前 8 bytes</span><b>都是 big-endian int32</b></div>
+<pre>int32 length = 8   int32 <span class="k">80877103</span>   <span class="a">→</span> SSLRequest      回 <span class="k">'S'</span> 然後握手
+int32 length = 8   int32 <span class="k">80877104</span>   <span class="a">→</span> GSSENCRequest   回 <span class="k">'N'</span>，client 會退回一般流程
+int32 length = 16  int32 <span class="k">80877102</span>   <span class="a">→</span> CancelRequest   再讀 8 bytes（pid + secret）
+int32 length = N   int32 <span class="k">196608</span>     <span class="a">→</span> 明文 StartupMessage（協定 3.0）
+
+<span class="c"># StartupMessage 的 payload：以 \0 結尾的字串成對出現，最後多一個 \0</span>
+"user\0app_rw\0database\0orders\0application_name\0metabase\0\0"</pre>
+  </div>
+
+  <div class="note">
+    <span class="l">CancelRequest 是最容易漏的一項</span>
+    <p>它走的是一條<strong>全新的 TCP 連線</strong>，沒有認證、沒有 <code>user</code> 欄位，
+    只帶要取消的後端 pid 與 secret key。但因為 TLS 已經終止，SNI 仍然告訴你要轉給哪個 Pooler——
+    轉過去讓 PgBouncer 處理即可，不要套用任何後續流程（第二階段也不要對它做權限判斷，
+    它根本沒有身分可查，記一筆稽核事件就好）。
+    多副本也沒問題，落在哪個 replica 都能轉。
+    漏掉這一項的症狀是「查詢按 Ctrl-C 沒有反應」，而且通常到正式環境才發現。</p>
+  </div>
+
+  <h3>對後端的連線</h3>
+  <p>撥到 Pooler 之後走<strong>標準 PostgreSQL TLS 交涉</strong>：送 <code>SSLRequest</code>、
+  等 <code>'S'</code>、再握手。不要用 direct TLS——那會多帶一個 PgBouncer 1.25 以上的版本要求。
+  憑證用 CNPG operator 自簽的內部 CA 驗證即可，wildcard 憑證只存在於 pg-proxy 這一側。</p>
+
+  <h3>ErrorResponse 的位元組格式</h3>
+  <p>第一階段只有「後端連不上」會用到，但第二階段整個拒絕路徑都靠它，現在就寫好：</p>
+  <div class="code">
+    <div class="hdr"><span>ErrorResponse</span><b>寫完就關閉連線</b></div>
+<pre><span class="k">'E'</span>                    1 byte
+int32 length           <span class="c"># 含自己，不含 type byte</span>
+<span class="k">'S'</span> "FATAL" \0        <span class="c"># severity（會被本地化的舊欄位）</span>
+<span class="k">'V'</span> "FATAL" \0        <span class="c"># severity（不本地化，PG 9.6+）</span>
+<span class="k">'C'</span> "28000" \0        <span class="c"># SQLSTATE</span>
+<span class="k">'M'</span> "..."   \0        <span class="c"># 給人看的訊息</span>
+\0                     <span class="c"># 欄位結束</span></pre>
+  </div>
+
+  <div class="scroll">
+  <table class="tbl">
+    <thead><tr><th>SQLSTATE</th><th>用在哪</th><th>階段</th></tr></thead>
+    <tbody>
+      <tr><td><code>08006</code></td><td>後端連不上、後端握手失敗</td><td>一</td></tr>
+      <tr><td><code>28000</code></td><td>帳號沒有授權、要連的 database 沒有授權</td><td>二</td></tr>
+      <tr><td><code>57P01</code></td><td>撤銷既有連線（<em>terminating connection due to administrator command</em>）</td><td>二</td></tr>
+      <tr><td><code>53300</code></td><td>超過連線上限</td><td>一</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>不要用靜默 RST 拒絕連線。</strong>client 端會變成難以診斷的逾時，
+  而 <code>57P01</code> 是 PostgreSQL 自己 <code>pg_terminate_backend</code> 用的同一個代碼，
+  各家驅動都認得，會走既有的重連或錯誤路徑。</p>
+</section>
+
+<section>
+  <h2><span class="num">§5</span> 第一階段 · 四個接縫</h2>
+  <p class="sub">留好這四個，第二階段是加實作；沒留好，是重寫。</p>
+
+  <div class="cards">
+    <div class="card">
+      <h4>A · Router</h4>
+      <div class="r k"><b>介面</b><span><code>Lookup(sni)</code> 回傳 cluster 識別字與後端位址</span></div>
+      <div class="r"><b>一階段</b><span>從 Pooler 的 annotation 建路由表，informer 更新時整份 atomic 換掉。</span></div>
+      <div class="r"><b>二階段</b><span>不變。</span></div>
+      <div class="r k"><b>現在</b><span><strong>回傳值一定要包含 cluster 識別字</strong>，
+        不能只回後端位址。第二階段拿它組 Redis 的 key，第一階段拿它寫 log。</span></div>
+    </div>
+
+    <div class="card">
+      <h4>B · Authorizer</h4>
+      <div class="r k"><b>介面</b><span><code>Check(cluster, user, db, ip)</code> 回傳放行與否加原因</span></div>
+      <div class="r"><b>一階段</b><span><code>allowAll</code>，永遠回放行。</span></div>
+      <div class="r"><b>二階段</b><span>換成查 Redis 的實作，加逾時、回退快取、降級、dryRun。</span></div>
+      <div class="r k"><b>現在</b><span>呼叫點要在 <strong>StartupMessage 解析完、撥後端之前</strong>。
+        放錯位置（例如撥完後端才檢查）第二階段會浪費一次後端連線，拒絕的錯誤訊息也會變得很難處理。</span></div>
+    </div>
+
+    <div class="card">
+      <h4>C · Registry</h4>
+      <div class="r k"><b>介面</b><span><code>Add</code> / <code>Remove</code> / <code>Snapshot</code> / <code>Count</code></span></div>
+      <div class="r"><b>一階段</b><span>graceful drain 與連線上限要用它。</span></div>
+      <div class="r"><b>二階段</b><span>多一個每 10 秒的 <code>Sweep</code>，重驗後撤銷。</span></div>
+      <div class="r k"><b>現在</b><span><strong>不能只存一個計數</strong>。要存得下每條連線的
+        cluster、user、database、conn_id 與兩側 socket，而且要能列舉。
+        第二階段的撤銷掃描完全靠它。</span></div>
+    </div>
+
+    <div class="card">
+      <h4>D · Relay</h4>
+      <div class="r k"><b>介面</b><span><code>Run(client, backend)</code></span></div>
+      <div class="r"><b>一階段</b><span><code>io.Copy</code> 雙向，直到任一端關閉。</span></div>
+      <div class="r"><b>之後</b><span>換成訊息解析迴圈（SQL 稽核那一版，不在這兩階段）。</span></div>
+      <div class="r k"><b>現在</b><span>把 <code>io.Copy</code> 收在介面後面就好。
+        連線管理、逾時、關閉順序留在外圍，之後換實作時這些都不用動。</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="l">還有一個不是介面的接縫</span>
+    <p><strong>連線的 struct 現在就把欄位帶齊</strong>：
+    <code>conn_id</code>、<code>cluster</code>、<code>sni</code>、<code>client_ip</code>、
+    <code>user</code>、<code>database</code>、<code>application_name</code>、
+    <code>backend</code>、<code>started_at</code>，
+    以及一個預留的 <code>revoked</code> 布林欄位（第二階段的撤銷會標記它）。
+    第一階段用不到全部，但第二階段的稽核事件與撤銷掃描要的就是這些。
+    現在補齊是零成本，之後補是每個地方都要改。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§6</span> 第一階段 · log、設定與驗收</h2>
+  <p class="sub">log 不只是觀測，它是第二階段能不能安全切換的依據。</p>
+
+  <h3>兩種事件</h3>
+  <div class="code">
+    <div class="hdr"><span>stdout · JSON 一行一筆</span><b>同一個 conn_id 串起整條連線</b></div>
+<pre>{"ts":"2026-09-09T10:58:03.220Z","event":<span class="k">"connect"</span>,"conn_id":"01K5R7Q2XJ",
+ "cluster":"tenant1","sni":"tenant1.db.example.com","client_ip":"10.42.7.19",
+ <span class="k">"user":"analyst_ro"</span>,<span class="k">"database":"orders"</span>,"application_name":"metabase",
+ "backend":"tenant1-pooler.cnpg.svc:5432","tls":"TLSv1.3","handshake_ms":3.1}
+
+{"ts":"2026-09-09T11:04:19.006Z","event":<span class="k">"disconnect"</span>,"conn_id":"01K5R7Q2XJ",
+ "reason":"client_close","bytes_in":18422,"bytes_out":9931204,"duration_s":375.8}</pre>
+  </div>
+  <p><code>reason</code> 的值：<code>client_close</code> / <code>backend_close</code> /
+  <code>backend_error</code> / <code>idle_timeout</code> / <code>shutdown</code>
+  （第二階段多一個 <code>policy_revoked</code>）。</p>
+
+  <div class="note a">
+    <span class="l">這份 log 是交給中央服務那邊的東西</span>
+    <p>第一階段最有價值的產物是「<strong>實際上有哪些帳號在連哪個資料庫</strong>」的真實清單。
+    pg-proxy 不負責把它寫進 Redis，但要負責<strong>把它整理成可以直接對帳的形狀</strong>交出去——
+    中央服務那邊拿它跟申請紀錄比對，補齊之後再寫進 Redis。
+    沒有這一步，第二階段開強制的那一刻會有一批人一起斷線。</p>
+  </div>
+
+  <div class="code">
+    <div class="hdr"><span>從 log 整理出實際使用情形</span><b>交給中央服務對帳</b></div>
+<pre>jq -sr '
+  map(select(.event == "connect"))
+  | group_by(.cluster + " " + .user)
+  | map({ cluster: .[0].cluster,
+          user:    .[0].user,
+          dbs:     (map(.database) | unique) })
+' proxy.log
+
+<span class="c"># 輸出：</span>
+[{"cluster":"tenant1","user":"app_rw","dbs":["orders"]},
+ {"cluster":"tenant1","user":"analyst_ro","dbs":["orders","reports"]},
+ {"cluster":"tenant2","user":"app_rw","dbs":["billing"]}]</pre>
+  </div>
+  <p><strong>觀測期至少要跨過一次月結</strong>——只跑一週很可能漏掉月初才跑的批次帳號。</p>
+
+  <h3>設定</h3>
+  <div class="code">
+    <div class="hdr"><span>第一階段的設定項</span><b>第二階段只是往下加</b></div>
+<pre>listen:            ":5432"
+tls.certFile:      /etc/pgproxy/tls/tls.crt   <span class="c"># cert-manager 的 Secret</span>
+tls.keyFile:       /etc/pgproxy/tls/tls.key
+route.hostnameAnnotation: pg-proxy.internal/hostname
+route.clusterAnnotation:  pg-proxy.internal/cluster
+backend.mode:      standard-tls                <span class="c"># 不要 direct TLS</span>
+backend.caFile:    /etc/pgproxy/ca/ca.crt      <span class="c"># CNPG 內部 CA</span>
+limits.maxConns:            5000
+limits.maxConnsPerCluster:  500
+timeouts.handshake:   10s
+timeouts.backendDial:  5s
+timeouts.idle:        應與 APISIX 及雲端 LB 對齊
+shutdown.drainTimeout: 300s                    <span class="c"># 要小於 terminationGracePeriodSeconds</span></pre>
+  </div>
+
+  <h3>metrics</h3>
+  <div class="code">
+    <div class="hdr"><span>第一階段至少要有</span><b>label 用 cluster，不要用 hostname</b></div>
+<pre>pgproxy_connections_active{cluster}
+pgproxy_connections_total{cluster,result}       <span class="c"># ok / handshake_error / backend_error</span>
+pgproxy_handshake_errors_total{reason}          <span class="c"># unknown_sni / tls_error / bad_startup</span>
+pgproxy_backend_dial_errors_total{cluster}
+pgproxy_bytes_total{cluster,direction}
+pgproxy_cert_expiry_seconds
+pgproxy_draining</pre>
+  </div>
+
+  <h3>驗收</h3>
+  <ul class="phase">
+    <li><div class="p">相容性</div><div>
+      <b>各家驅動都要實測</b>
+      <span><code>psql</code>（<code>sslmode</code> 從 <code>require</code> 到 <code>verify-full</code>）、
+      JDBC、pgx、asyncpg、psycopg，以及你們實際在用的 ORM。
+      重點不是「能連」，是連線池的建立與回收行為正常。</span>
+    </div></li>
+    <li><div class="p">大流量</div><div>
+      <b>COPY 與 pg_dump</b>
+      <span><code>COPY FROM STDIN</code> 灌一個大檔、<code>pg_dump</code> 匯出一個大庫。
+      緩衝區大小、記憶體用量，以及有沒有哪個逾時會在中途踢掉連線，要親眼看過。</span>
+    </div></li>
+    <li><div class="p">中斷</div><div>
+      <b>query cancel</b>
+      <span>跑一個長查詢然後按 Ctrl-C，要真的取消。見 §4 的 <code>CancelRequest</code>。</span>
+    </div></li>
+    <li><div class="p">部署</div><div>
+      <b>rollout 不能斷既有連線</b>
+      <span>在有長連線的情況下滾動更新一次。SIGTERM 之後要停收新連線、等既有連線自然結束；
+      <code>terminationGracePeriodSeconds</code> 沒調大的話這一項一定失敗。</span>
+    </div></li>
+    <li><div class="p">憑證</div><div>
+      <b>輪替不重啟、不斷線</b>
+      <span>手動觸發一次 cert-manager 續期，確認新連線用到新憑證、既有連線不受影響。</span>
+    </div></li>
+    <li><div class="p">log</div><div>
+      <b>每一條連線都要有 user 和 database</b>
+      <span>抽樣比對：同一段時間內 <code>connect</code> 事件的數量與
+      <code>pg_stat_activity</code> 對得起來，而且沒有 <code>user</code> 是空的。
+      <strong>這一項不過，第二階段就沒有可信的輸入。</strong></span>
+    </div></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">§7</span> 第二階段 · pg-proxy 讀什麼</h2>
+  <p class="sub">這是對外部的讀取契約，不是資料的設計。要跟中央服務那邊談定的就這一節。</p>
+
+  <p>pg-proxy 只需要回答一個問題：<strong>這個帳號能不能連這個 database。</strong>
+  所以它讀的形狀就照著這句話長——<strong>一個 cluster 一個 HASH，
+  field 是帳號名稱，value 是它能連的 database 清單</strong>。</p>
+
+  <div class="code">
+    <div class="hdr"><span>Redis · pg-proxy 只讀不寫</span><b>一個 cluster 一個 key</b></div>
+<pre><span class="k">pgproxy:policy:tenant1</span>    HASH
+    app_rw         ["orders"]
+    analyst_ro     ["orders","reports"]
+    batch_job      ["orders","logs"]
+
+<span class="k">pgproxy:policy:tenant2</span>    HASH
+    app_rw         ["billing"]     <span class="c"># 跟 tenant1 的 app_rw 無關</span></pre>
+  </div>
+
+  <ul class="lim">
+    <li class="ok">
+      <b>key 的 <code>{cluster}</code></b>
+      <span>用中央服務自己已經在用的 cluster 識別字。pg-proxy 從 SNI 查路由表就有了
+      （接縫 A 的回傳值），對方不必知道任何 DNS 名稱。</span>
+    </li>
+    <li class="ok">
+      <b>field 是帳號名稱</b>
+      <span>就是連線字串裡的 <code>user</code>，也就是 <code>StartupMessage</code> 送過來的那個字串，
+      一字不差。同一個 cluster 內帳號不重複，所以不會衝突；
+      不同 cluster 的同名帳號是不同的人，所以 key 必須按 cluster 切。</span>
+    </li>
+    <li class="ok">
+      <b>value 是 database 名稱的 JSON 陣列</b>
+      <span>每條新連線會解一次，所以保持小。之後要加連線數上限之類的，
+      把陣列換成 <code>{"databases":[...],"maxConnections":40}</code> 即可，key 結構不用動。</span>
+    </li>
+    <li class="no">
+      <b>停用要寫空清單 <code>[]</code>，不要 <code>HDEL</code></b>
+      <span>這是唯一需要對方配合的一件事。<code>HDEL</code> 之後 pg-proxy 讀到的是
+      <code>nil</code>，而 <code>nil</code> 也可能是「Redis 被 flush」或「key 被淘汰」——
+      分不出來。寫一個空清單就只有一個意思。
+      而且開通、改權限、停用都變成同一行 <code>HSET</code>，對方的程式碼不用分岔。</span>
+    </li>
+  </ul>
+
+  <div class="note">
+    <span class="l">pg-proxy 對這份資料的立場</span>
+    <p><strong>它只讀，而且必須假設隨時可能讀不到或讀到怪東西。</strong>
+    Redis 掛了、被 flush、key 被 <code>maxmemory</code> 淘汰、value 寫壞——
+    這四種情況 pg-proxy 都得安全地處理（§8）。
+    資料是不是最新的、寫失敗有沒有補，是中央服務那一側的責任，pg-proxy 管不到也不該管。</p>
+    <p>順帶一個要請他們確認的 Redis 設定：
+    <strong><code>maxmemory-policy</code> 不能是 <code>allkeys-lru</code></strong>。
+    跟一般快取共用實例的話，記憶體壓力下政策 key 會被默默淘汰，
+    症狀是「某個 cluster 的人整批連不上」。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§8</span> 第二階段 · 閘門與撤銷</h2>
+  <p class="sub">全部都在 pg-proxy 裡面，動到的只有接縫 B 和接縫 C。</p>
+
+  <h3>接縫 B：Redis 版的 Authorizer</h3>
+  <p>一次 pipeline 送兩個指令：<code>HLEN</code> 判斷這個 cluster 的資料還在不在，
+  <code>HMGET</code> 取那個帳號的授權。<strong>兩個都要，缺一個就會把
+  「Redis 資料不見了」誤判成「這些人都沒有授權」。</strong></p>
+
+  <div class="code">
+    <div class="hdr"><span>閘門 ①</span><b>一次往返，兩個指令</b></div>
+<pre>key := "pgproxy:policy:" + cluster
+pipe := rdb.Pipeline()
+lenCmd := pipe.HLen(ctx, key)
+getCmd := pipe.HMGet(ctx, key, user)   <span class="c">// 用 HMGet 不要用 HGet：</span>
+_, err := pipe.Exec(ctx)               <span class="c">// HGet 的 redis.Nil 會讓 Exec 回錯誤</span>
+
+<span class="k">if</span> err != nil {
+    <span class="k">return</span> fallback(cluster, user, db)   <span class="c">// 逾時或連不上</span>
+}
+<span class="k">if</span> lenCmd.Val() == 0 {
+    <span class="k">return</span> degraded(cluster, user, db)   <span class="c">// 整個 HASH 沒了 → 絕不當拒絕</span>
+}
+
+raw := getCmd.Val()[0]
+<span class="k">if</span> raw == nil {
+    <span class="k">return</span> deny(<span class="k">"28000"</span>, "no grant for this account")
+}
+<span class="k">var</span> dbs []string
+<span class="k">if</span> json.Unmarshal([]byte(raw.(string)), &amp;dbs) != nil {
+    <span class="k">return</span> degraded(cluster, user, db)   <span class="c">// 資料壞掉也不能當拒絕</span>
+}
+<span class="k">if</span> !slices.Contains(dbs, db) {
+    <span class="k">return</span> deny(<span class="k">"28000"</span>, "database not granted: "+db)
+}
+cache.Store(cluster, user, dbs)                <span class="c">// 供 fallback 使用</span>
+<span class="k">return</span> allow()</pre>
+  </div>
+
+  <div class="scroll">
+  <table class="tbl">
+    <thead><tr><th>Redis 回什麼</th><th>意思</th><th>怎麼處理</th></tr></thead>
+    <tbody>
+      <tr><td><code>HLEN</code> &gt; 0，欄位有值</td><td>正常</td><td>看清單裡有沒有那個 database</td></tr>
+      <tr><td><code>HLEN</code> &gt; 0，欄位 <code>nil</code></td><td>這個人真的沒申請過</td><td><code>deny 28000</code></td></tr>
+      <tr><td><code>HLEN</code> = 0</td><td>整個 HASH 沒了，資料不可信</td><td><strong>絕不當拒絕</strong>：回退快取 + 告警</td></tr>
+      <tr><td>逾時 / 連線錯誤</td><td>Redis 抖動或掛了</td><td>回退快取 + 告警</td></tr>
+      <tr><td>值不是合法 JSON</td><td>寫壞了</td><td>回退快取 + 告警</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>回退快取</strong>是一份「每個 <code>(cluster, user)</code> 上次成功的答案」，
+  只在上面後三種情況才使用，並帶一個存活上限（例如 5 分鐘）；超過上限就進降級策略。
+  <strong>降級策略要是一個明確的設定項</strong>（<code>degradeAction: allow | deny</code>），
+  <strong>預設 <code>allow</code> 並告警</strong>——把它設成 <code>deny</code>
+  等於讓一次 Redis 抖動變成全叢集的資料庫故障。</p>
+
+  <p>Redis 的<strong>逾時要設得很緊</strong>（例如 100ms）。沒有逾時的話 Redis 一卡住，
+  新連線就無限期地掛在那裡——比拒絕還糟，因為 client 看到的是逾時而不是錯誤訊息。
+  連線建立的速率不是問題：連線池會把連線握著，真正的尖峰是部署或擴容時的重連風暴，
+  那個量級 Redis 完全吃得下。</p>
+
+  <h3>接縫 C：定期重驗</h3>
+  <p>撤銷既有連線<strong>不需要算政策差集</strong>。你手上已經有連線登記表，
+  每 10 秒把裡面的連線批次拿去 Redis 重驗一次就好：</p>
+  <div class="flow">
+    <span class="t">Registry.Sweep — 每 10 秒</span>
+    <span class="s">1.</span> Snapshot() 取出所有連線，依 cluster 分組<br>
+    <span class="s">2.</span> 每個 cluster 一次 pipeline：<span class="hi">HLEN</span> + <span class="hi">HMGET</span>（該組所有 user，去重）<br>
+    <span class="s">3.</span> HLEN 為 0 或查詢失敗 <span class="a">→</span> <span class="hi">整輪跳過</span>，告警。不要砍任何連線<br>
+    <span class="s">4.</span> 對每條不再合格的連線：標記 <code>revoked</code>、送 <span class="hi">FATAL 57P01</span><br>
+    <span class="s">5.</span> 關閉 client 與 backend <span class="hi">兩側</span> socket（不關後端會留下孤兒）<br>
+    <span class="s">6.</span> 輸出 disconnect 事件，<code>reason: policy_revoked</code>
+  </div>
+  <p>第 3 步是這一段最重要的一行。掃描出錯時的正確行為是<strong>什麼都不做</strong>——
+  一次 Redis 故障把所有連線砍光，比撤銷晚十秒嚴重得多。</p>
+  <p>幾千條連線用 pipeline 分批，幾個 RTT 就結束。
+  <strong>既有連線的撤銷延遲就等於這個間隔</strong>，10 秒是合理起點。</p>
+
+  <div class="note">
+    <span class="l">被擋掉的 client 會立刻重連</span>
+    <p>大多數連線池吃到 FATAL 會馬上重試。閘門 ① 一定要跟撤銷同時生效，
+    否則會變成「砍掉→重連→再砍」的迴圈，稽核 log 會被灌爆。
+    可以考慮對短時間內被拒絕多次的來源加一點退避。</p>
+  </div>
+
+  <h3>多一種稽核事件</h3>
+  <div class="code">
+    <div class="hdr"><span>stdout</span><b>第二階段唯一新增的事件型別</b></div>
+<pre>{"ts":"2026-09-09T11:06:02.771Z","event":<span class="k">"auth"</span>,"conn_id":"01K5R8M4TQ",
+ "cluster":"tenant1","client_ip":"10.42.7.19","user":"analyst_ro","database":"orders",
+ "result":<span class="k">"denied"</span>,"sqlstate":"28000","detail":"database not granted: orders"}</pre>
+  </div>
+  <p><code>result</code> 的值：<code>denied</code> / <code>degraded</code> /
+  <code>fallback</code> / <code>would_deny</code>（dryRun 期間）。
+  後三種都要留紀錄——它們是判斷 Redis 或降級策略有沒有問題的唯一線索。</p>
+
+  <h3>設定與 metrics</h3>
+  <div class="code">
+    <div class="hdr"><span>第二階段新增</span><b>接在第一階段的設定後面</b></div>
+<pre>redis.addr:            redis.pgproxy.svc:6379
+redis.timeout:         100ms
+redis.keyPrefix:       "pgproxy:policy:"
+authz.enabled:         true
+<span class="k">authz.dryRun:          true</span>          <span class="c"># 上線程序見 §9</span>
+authz.degradeAction:   allow                <span class="c"># HLEN=0 或 Redis 掛掉時</span>
+authz.fallbackTTL:     5m
+sweep.interval:        10s
+
+<span class="c"># metrics</span>
+pgproxy_authz_decisions_total{cluster,decision}   <span class="c"># allow/deny/degraded/fallback</span>
+<span class="k">pgproxy_authz_would_deny_total{cluster,user}</span>     <span class="c"># dryRun 期間看這個</span>
+pgproxy_redis_errors_total{op}
+pgproxy_redis_latency_seconds
+pgproxy_policy_unavailable{cluster}              <span class="c"># HLEN=0，gauge</span>
+pgproxy_sweep_revoked_total{cluster}
+pgproxy_sweep_skipped_total{cluster,reason}</pre>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">§9</span> 第二階段 · 上線程序與驗收</h2>
+  <p class="sub">不要直接開強制。先跑觀察模式，把數字跑到 0。</p>
+
+  <ul class="phase">
+    <li><div class="p">步驟一</div><div>
+      <b>開 dryRun</b>
+      <span><code>authz.enabled: true</code> 但 <code>authz.dryRun: true</code>——
+      <strong>照常查 Redis、照常記錄「這條連線會被擋」，但一律放行</strong>。
+      對連線行為零影響，可以放心開在正式環境。</span>
+    </div></li>
+    <li><div class="p">步驟二</div><div>
+      <b>盯 would_deny</b>
+      <span><code>pgproxy_authz_would_deny_total</code> 每出現一個新的
+      <code>(cluster, user)</code>，就是 Redis 裡漏掉的一筆授權，回報給中央服務那邊補。
+      <strong>跑到連續數天為 0</strong>——不是「大致上沒問題」，是 0。
+      這一段建議也跨過一次月結。</span>
+    </div></li>
+    <li><div class="p">步驟三</div><div>
+      <b>先做故障演練，再關 dryRun</b>
+      <span>下面三項演練在 dryRun 期間就要做完。確認降級行為正確之後，
+      再<strong>逐個 cluster</strong> 把 <code>dryRun</code> 關掉，不要一次全開。</span>
+    </div></li>
+  </ul>
+
+  <h3>驗收 · 功能</h3>
+  <ul class="phase">
+    <li><div class="p">撤銷</div><div>
+      <b>把某個帳號的授權清空</b>
+      <span>Redis 寫入 <code>[]</code> 之後：新連線<strong>立刻</strong>被擋並收到清楚的錯誤訊息；
+      既有連線在一個掃描間隔內斷開，<code>disconnect</code> 事件的
+      <code>reason</code> 是 <code>policy_revoked</code>；<strong>後端那一側的連線也確實關掉了</strong>
+      （去 <code>pg_stat_activity</code> 確認，不要只看 client 端）。</span>
+    </div></li>
+    <li><div class="p">授權範圍</div><div>
+      <b>沒授權的 database</b>
+      <span>用一個只被授權 <code>orders</code> 的帳號去連 <code>reports</code>，要被擋，
+      而且錯誤訊息說得出是哪一個資料庫沒有授權。</span>
+    </div></li>
+    <li><div class="p">重連風暴</div><div>
+      <b>擋掉一個有連線池的帳號</b>
+      <span>應用程式會立刻重連。確認 <code>auth</code> 事件的量在可接受範圍內、
+      退避有生效、CPU 沒有被拒絕路徑吃掉。</span>
+    </div></li>
+  </ul>
+
+  <h3>驗收 · 故障演練（比功能重要）</h3>
+  <ul class="phase">
+    <li><div class="p">演練</div><div>
+      <b>把 Redis 停掉</b>
+      <span>新連線<strong>仍然要能建立</strong>（走回退快取或降級），並且告警。
+      如果結果是「所有人連不上」，代表逾時或 <code>degradeAction</code> 沒設對——
+      那會把一次 Redis 抖動放大成全叢集的資料庫故障。</span>
+    </div></li>
+    <li><div class="p">演練</div><div>
+      <b>FLUSHDB</b>
+      <span>在測試環境清空 Redis。<code>HLEN</code> 變成 0，所以 pg-proxy 必須
+      <strong>拒絕把找不到解讀成拒絕</strong>：新連線走降級、
+      <em>而且撤銷掃描要整輪跳過、一條連線都不能砍</em>。
+      這一項沒演練過就上線，等於埋了一顆隨時會炸的雷。</span>
+    </div></li>
+    <li><div class="p">演練</div><div>
+      <b>讓 Redis 變慢</b>
+      <span>注入延遲（例如 500ms）。確認 <code>redis.timeout</code> 有生效、
+      新連線走回退快取而不是卡住，並且 <code>pgproxy_redis_latency_seconds</code> 看得出來。
+      「慢」比「掛掉」更常見，也更難發現。</span>
+    </div></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">§10</span> 範圍外</h2>
+  <p class="sub">先寫下來，之後才不會被當成「你不是說會做嗎」。</p>
+
+  <h3>中央服務那一側（既有系統，不在這份規劃裡）</h3>
+  <ul class="lim">
+    <li class="no">
+      <b>誰把資料寫進 Redis、寫失敗怎麼補</b>
+      <span>pg-proxy 只讀。資料是不是最新的、雙寫有沒有漏，是那一側的責任。
+      pg-proxy 這邊唯一的回應方式是安全降級（§8）與把
+      <code>would_deny</code> 回報出去（§9）。</span>
+    </li>
+    <li class="no">
+      <b>資料的正確性與新鮮度</b>
+      <span>pg-proxy 沒有辦法判斷 Redis 裡的資料是不是過期的。
+      如果需要這個能力，要請他們在每個 HASH 多寫一個同步時間戳欄位，
+      pg-proxy 才能曝一個 <code>policy_age_seconds</code>。<strong>現在先不做。</strong></span>
+    </li>
+    <li class="no">
+      <b>緊急封鎖的專用通道</b>
+      <span>要在中央服務之外另外擋人，需要一組他們不會覆寫的欄位。
+      要不要做是他們那邊的決定，pg-proxy 這邊只是多讀一個欄位。先不做。</span>
+    </li>
+  </ul>
+
+  <h3>pg-proxy 之後才做的</h3>
+  <ul class="lim">
+    <li class="no">
+      <b>SQL 稽核</b>
+      <span>要記錄「誰執行了什麼 SQL」必須持續解析訊息，雙向轉發的快路徑就此消失。
+      那是接縫 D 換實作的那一版。第二階段做完能回答的是「誰在什麼時候連了哪個庫」。</span>
+    </li>
+    <li class="no">
+      <b>語句層的攔截</b>
+      <span>「這個帳號只能讀不能寫」不要用 SQL 文字判斷，太容易繞過。
+      正確做法是後端給一個唯讀的 PostgreSQL role，讓資料庫去擋。</span>
+    </li>
+    <li class="no">
+      <b>row / column 層的權限</b>
+      <span>pg-proxy 擋的是連線，不是資料。<code>GRANT</code> 與 RLS 仍然是最後一道，
+      不能因為有了 proxy 就放鬆。</span>
+    </li>
+  </ul>
+
+  <div class="note">
+    <span class="l">兩個已知的限制</span>
+    <p><strong>來源 IP 會被改寫。</strong>PgBouncer 不支援 PROXY protocol，
+    所以 PostgreSQL 看到的仍是 pooler pod 的 IP。pg-proxy 的 log 記得下真實 client IP
+    （前提是 APISIX 有把 PROXY protocol 帶過來），兩邊靠 <code>conn_id</code> 關聯。
+    <strong>SCRAM channel binding 不能用。</strong>TLS 在 proxy 終止、對後端重建，
+    綁定值兩段不同，client 設 <code>channel_binding=require</code> 會失敗。
+    預設值 <code>prefer</code> 沒問題，但要先確認沒有團隊把它設成 require。</p>
+  </div>
+</section>
+
+<footer>
+  <p>相關文件：〈pg-proxy 權限控制與 SQL 稽核〉（設計取捨的完整推導，以及之後的 SQL 稽核那一版）、
+  〈自建 pg-proxy 架構〉（第一階段的基礎設計與周邊項目 01–08）、
+  〈跨叢集邊界方案選型〉、〈TLS 直通設定清單〉。</p>
+</footer>
+
+</div>
+</body>
+</html>

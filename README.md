@@ -11,6 +11,8 @@ Cluster A 的應用服務經由 wildcard 網域連線到 Cluster B 的 CloudNati
 | [passthrough-implementation.html](passthrough-implementation.html) | 方案 A：架構、TLS 不在邊界終止的原因、P1–P15 需注意的問題、改用 Traefik 的差異 |
 | [passthrough-config.html](passthrough-config.html) | 方案 A 的設定清單，依套用順序排列 |
 | [pg-proxy-architecture.html](pg-proxy-architecture.html) | 自建 PostgreSQL 感知代理：代答 SSLRequest、依 SNI 直接轉發到各租戶 Pooler，client 端零改動 |
+| [pg-proxy-phases.html](pg-proxy-phases.html) | 實作計畫：第一階段只做 TLS、分流、記錄與轉發，第二階段才加權限；四個接縫、兩階段的驗收與故障演練 |
+| [pg-proxy-authz-audit.html](pg-proxy-authz-audit.html) | 單一叢集下在 pg-proxy 加上存取控制與 SQL 稽核：兩道閘門、政策從中央服務 DB 經 Redis 投影、訊息解析的範圍與代價、三個版本的切分 |
 
 ## 版本相依
 
