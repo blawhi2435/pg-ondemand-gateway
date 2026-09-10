@@ -1,0 +1,44 @@
+# Design §10.4's "fixed ClusterIP" requirement is about APISIX's own
+# gateway Service (what the test client's hostAliases point at) — this
+# Service just needs a stable DNS name for APISIX's stream route upstream
+# to target, which "pg-proxy.pgproxy-e2e.svc.cluster.local" already is
+# regardless of which ClusterIP gets assigned underneath it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+spec:
+  selector:
+    app: pg-proxy
+  ports:
+    - name: pgwire
+      port: 5432
+      targetPort: 5432
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: pg-proxy
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+spec:
+  selector:
+    matchLabels:
+      app: pg-proxy
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

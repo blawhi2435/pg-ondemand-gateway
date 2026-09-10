@@ -1,0 +1,69 @@
+# APISIX gateway helm values for pg-proxy's e2e environment (design §11,
+# task 20.1), running **file-driven standalone** — no etcd, no
+# apisix-ingress-controller, matching the company's actual production
+# APISIX topology (task 33, round 7). See README's "APISIX standalone"
+# section for the full investigation behind this choice, including why
+# the API-driven standalone + controller 2.x combination tried in round 6
+# does NOT work (apache/apisix-ingress-controller#2665).
+#
+# File-driven vs API-driven standalone (both are "config_provider: yaml",
+# the difference is where the route data comes from):
+#   - File-driven (this file): routes live in a static apisix.yaml the
+#     chart renders from apisix.deployment.standalone.config below.
+#     APISIX polls the file for changes — no Admin API involved for
+#     routes at all, and stream_routes IS supported here.
+#   - API-driven (round 6): routes pushed at runtime via
+#     PUT /apisix/admin/configs. Confirmed NOT viable for stream_routes
+#     with the current apisix-ingress-controller (404 on the classic
+#     per-resource endpoints its sync client still targets).
+etcd:
+  enabled: false
+apisix:
+  # File-driven vs API-driven standalone is decided by THIS flag, not by
+  # role_traditional.config_provider alone: internal/apisix/core/
+  # config_yaml.lua's is_use_admin_api() checks apisix.enable_admin — if
+  # true, config_yaml.lua skips reading apisix.yaml entirely and waits
+  # forever for an Admin API push that never comes (workers stay stuck at
+  # "has not received configuration", /status/ready permanently 503, with
+  # no error logged anywhere — this is exactly what round 6's API-driven
+  # setup wanted, and exactly what silently breaks file-driven mode if
+  # left on). Must be false here.
+  admin:
+    enabled: false
+  deployment:
+    mode: standalone
+    role: traditional
+    role_traditional:
+      config_provider: yaml
+    # The chart wraps this block into a ConfigMap named "apisix.yaml" and
+    # appends the file's own required terminator (see apisix-config-cm.yml
+    # in the chart: `{{- .Values.apisix.deployment.standalone.config |
+    # nindent 4 }}` followed by a literal `#END` line) — so the chart
+    # supplies #END automatically here. It's still a hard requirement of
+    # APISIX's own file-driven-standalone parser (a file missing it is
+    # treated as incompletely written and silently ignored), which matters
+    # if this config is ever provided a different way (e.g. an
+    # existingConfigMap) instead of through this chart-rendered one.
+    standalone:
+      config: |
+        stream_routes:
+          - server_port: 5432
+            upstream:
+              nodes:
+                "pg-proxy.pgproxy-e2e.svc:5432": 1
+              type: roundrobin
+  # stream_proxy is the *listener* (design task 20.2's static config) —
+  # separate from the stream_routes above (the actual route), which is
+  # why 32.1's finding (the listener works independent of any route/admin
+  # layer) still applies here.
+  stream:
+    enabled: true
+    tcp:
+      - 5432
+service:
+  type: ClusterIP
+  externalTrafficPolicy: ""
+  stream:
+    enabled: true
+    tcp:
+      - 5432

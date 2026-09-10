@@ -1,0 +1,79 @@
+# 3 replicas fixed even in this test environment (design §11): PDB below
+# sets minAvailable: 2, so 2 replicas would let the PDB block every
+# voluntary disruption and deadlock a rolling update outright — e2e
+# scenario 9 (rollout restart) would never pass. pg-proxy is pure
+# byte-forwarding, so 3 replicas' resource footprint is negligible.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+  labels:
+    app: pg-proxy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pg-proxy
+  template:
+    metadata:
+      labels:
+        app: pg-proxy
+    spec:
+      serviceAccountName: pg-proxy
+      # Must exceed shutdown.drainTimeout (30s in this environment's
+      # ConfigMap) — otherwise the kubelet SIGKILLs the process mid-drain,
+      # turning graceful shutdown into the exact abrupt teardown it exists
+      # to prevent.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: pg-proxy
+          image: pg-proxy:dev
+          imagePullPolicy: Never
+          ports:
+            - name: pgwire
+              containerPort: 5432
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: PGPROXY_CONFIG
+              value: /etc/pgproxy/config.yaml
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            # Directory mounts, never subPath (design §8.3 / task 19.2):
+            # subPath breaks the atomic-symlink-swap k8s uses to update a
+            # mounted Secret/ConfigMap — the mount stays pinned to the old
+            # inode forever and hot reload silently stops working.
+            - name: config
+              mountPath: /etc/pgproxy
+            - name: tls
+              mountPath: /etc/pgproxy/tls
+            - name: backend-ca
+              mountPath: /etc/pgproxy/ca
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: pg-proxy-config
+        - name: tls
+          secret:
+            secretName: pg-proxy-tls
+        - name: backend-ca
+          configMap:
+            name: pg-proxy-backend-ca

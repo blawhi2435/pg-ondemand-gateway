@@ -1,0 +1,33 @@
+# The two annotations are pg-proxy's entire routing contract (design §7.1)
+# — no new CRD, CNPG ignores annotations it doesn't recognize.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: tenant1-pooler
+  namespace: pgproxy-e2e
+  annotations:
+    pg-proxy.internal/hostname: tenant1.db.test
+    pg-proxy.internal/cluster: tenant1
+spec:
+  cluster:
+    name: tenant1-db
+  instances: 1
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: tenant2-pooler
+  namespace: pgproxy-e2e
+  annotations:
+    pg-proxy.internal/hostname: tenant2.db.test
+    pg-proxy.internal/cluster: tenant2
+spec:
+  cluster:
+    name: tenant2-db
+  instances: 1
+  type: rw
+  pgbouncer:
+    poolMode: transaction

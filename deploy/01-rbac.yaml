@@ -1,0 +1,37 @@
+# RBAC for pg-proxy's dynamic-informer route table (design §7.5): read-only
+# on Poolers (informer's first action is List, so list+watch are both
+# required — RBAC misconfiguration otherwise fails silently as an empty
+# route table, not an error), plus create-only on Events for duplicate
+# hostname / malformed-annotation warnings.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+rules:
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["poolers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pg-proxy
+  namespace: pgproxy-e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pg-proxy
+subjects:
+  - kind: ServiceAccount
+    name: pg-proxy
+    namespace: pgproxy-e2e

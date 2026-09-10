@@ -1,0 +1,53 @@
+# Test-environment overrides (design §8.1's own note): limits are set small
+# enough to actually trigger during e2e scenario 5 — an 8GB dev node would
+# never reach the documented production defaults (maxConns: 5000).
+# "測不到的上限等於沒測。"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-proxy-config
+  namespace: pgproxy-e2e
+data:
+  config.yaml: |
+    listen: ":5432"
+    metricsListen: ":9090"
+
+    tls:
+      certFile: /etc/pgproxy/tls/tls.crt
+      keyFile: /etc/pgproxy/tls/tls.key
+      reloadInterval: 30s
+
+    backend:
+      caFile: /etc/pgproxy/ca/ca.crt
+
+    # Default per design §8.1: disabled. Task 20.3's PROXY-protocol-to-
+    # upstream verification (see design §9.4c for the evidence and exact
+    # settings) was run as a standalone, deliberate check with this
+    # flipped to true+trustedCIDRs set — it is NOT left on for the general
+    # e2e suite, since every direct-to-pod scenario (bypassing APISIX)
+    # would then need to send a PROXY header itself or be rejected as
+    # bad_proxy_header.
+    proxyProtocol:
+      enabled: false
+      trustedCIDRs: []
+
+    route:
+      namespace: pgproxy-e2e
+      hostnameAnnotation: pg-proxy.internal/hostname
+      clusterAnnotation: pg-proxy.internal/cluster
+
+    limits:
+      maxConns: 20
+      maxConnsPerCluster: 10
+      cancel:
+        window: 10s
+        maxPerIP: 5
+        maxInFlight: 50
+
+    timeouts:
+      handshake: 10s
+      backendDial: 5s
+      idle: 300s
+
+    shutdown:
+      drainTimeout: 30s
