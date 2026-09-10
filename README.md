@@ -28,6 +28,10 @@ PostgreSQL wire-protocol 感知的 TLS 終止代理，依 SNI 把連線分流到
 CNPG Pooler，本身不做存取控制（第二階段的範圍）。詳細設計見
 [docs/superpowers/specs/2026-09-09-pg-proxy-phase1-design.md](docs/superpowers/specs/2026-09-09-pg-proxy-phase1-design.md)。
 
+> **APISIX 該怎麼設定？** 見 [result.md](result.md)——涵蓋 file-driven 與
+> API-driven 兩種 standalone 模式各自的做法、哪一種組合不可用及其原因、
+> 以及兩個會靜默失效的設定（`admin.enabled` 的雙重角色、`#END` 的硬性要求）。
+
 ### 建置
 
 ```bash
@@ -121,10 +125,24 @@ route 永遠讀不到、卻連個錯誤訊息都沒有，非常難查。
 `config_yaml.lua` 裡這一行判斷。**這份 values 必須明確設
 `apisix.admin.enabled: false`**，chart 的預設值是 `true`。
 
-### APISIX standalone（無 etcd）+ controller 2.x 實測結論（task 32，不可行——歷史紀錄）
+### APISIX standalone（無 etcd）+ controller 2.x 實測結論（task 32）
 
-**結論：目前這個組合無法承載 L4 stream route。已用兩層獨立測試定位到確切
-原因，不是臆測。**
+> **範圍修正（task 34，見 [result.md](result.md)）**
+>
+> 本節原本的結論寫成「standalone 無法承載 L4 stream route」，**那個範圍太寬**。
+> 後續實測證實：**API-driven standalone 直接 `PUT /apisix/admin/configs`
+> 是可以承載 `stream_route` 的**（`apisix/admin/standalone.lua` 的 `patch_schema`
+> 明確接受該型別，並以 psql `verify-full` 實連驗證通過）。
+>
+> 不可用的只有**「透過 apisix-ingress-controller 2.2.0 的 CRD 管理這條路由」**
+> 這一條路徑——原因是它內建的 adc sync client 呼叫傳統的 per-resource 端點
+> `/apisix/admin/routes`，而 standalone 只提供 `/apisix/admin/configs`。
+> 那是 controller 的缺陷，不是模式的能力限制。
+>
+> 以下內容保留為 controller 那條路徑的完整證據鏈。
+
+**結論：`controller 2.x + standalone` 這個組合無法承載 L4 stream route。
+已用兩層獨立測試定位到確切原因，不是臆測。**
 
 - **測試環境**：`apisix/apisix` chart 2.17.0（APISIX 3.18.0）、
   `apisix-ingress-controller` 2.2.0（同一個 chart 內建的 subchart，帶

@@ -368,3 +368,16 @@
       **數字若有變化須查明原因，不得當作雜訊**
 - [x] 33.5 更新 README：改寫 APISIX 那一節，說明 file-driven standalone 的完整設定、
       `#END` 的硬性要求、以及 API-driven + controller 為何不適用（保留 round 6 的證據鏈）
+
+## 34. 驗證 API-driven standalone 能否直接承載 stream route（後續補測）
+
+<!-- TDD skipped: 環境驗證；結論本身即產出 -->
+
+- [x] 34.1 部署 APISIX 3.13+ API-driven standalone（`admin.enabled: true` + `config_provider: yaml`），
+      並在靜態設定啟用 `gateway.stream.enabled` / `tcp: [5432]`
+- [x] 34.2 直接 `PUT /apisix/admin/configs`，payload 帶 `stream_route` 指向 pg-proxy，
+      **不經過 ingress controller**。記錄完整的請求與回應
+- [x] 34.3 用 psql `verify-full` 實際連線驗證那條 route 真的生效
+      （不能只看 API 回 200，要看封包真的通）
+- [x] 34.4 給出明確結論並更新 README：API-driven 是否能承載 stream route，
+      以及 round 6 的失敗確實只是 controller 的問題
